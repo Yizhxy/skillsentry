@@ -1,0 +1,32 @@
+Task: {task_name}
+Round: {round_num}
+
+## Current rules.json
+
+{current_rules}
+
+## Dual-signal 2x2 matrix (reward x skillsentry intervention)
+
+{dual_signal_matrix}
+
+## This round's agent trajectories ({n_success} success, {n_fail} failure)
+
+Below are the **complete agent trajectories** — actual Bash commands, code written, stdout output,
+and SkillSentry decisions. Read the code carefully to find the exact differences between success and failure.
+
+=== Successful trajectories ===
+{success_summaries}
+
+=== Failed trajectories ===
+{fail_summaries}
+
+## Previous round context
+
+{prev_round_context}
+
+Diagnose field-level problems. Read the actual code in the trajectories to find:
+- Exact wrong patterns in failure traces → failure_patterns rules with precise regex
+- Exact correct patterns in success traces → logical_actions regex and on_enter hints with real code examples
+- SkillSentry decisions that blocked correct behavior → FP candidates
+
+Quote actual code lines as evidence in your diagnosis.

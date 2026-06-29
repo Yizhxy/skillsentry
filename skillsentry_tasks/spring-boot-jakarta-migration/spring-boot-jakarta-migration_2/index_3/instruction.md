@@ -1,0 +1,7 @@
+Under the `/workspace/` folder, there is a legacy user management microservice that you need to migrate from Java 8/Spring Boot 2.7 to **Java 17/Spring Boot 3.2**. This microservice manages user information via REST API. Key functions: CRUD operations, JWT-based authentication, Role-based access control, JPA/Hibernate persistence, Input validation, and External API calls using RestTemplate.
+
+Your migration should:
+
+First, analyze current project structure — read pom.xml, identify dependencies and versions. Then upgrade Java version from 8 to **17** in pom.xml. Next, upgrade Spring Boot from 2.7.x to **3.2.x** and all related dependencies. After that, migrate `javax.*` namespace to `jakarta.*` — update all Java source files. Subsequently, update dependency versions for Spring Boot 3.2 + Java 17 compatibility. Finally, migrate to Hibernate 6 — update entity mappings and query syntax if needed. Lastly, update Spring Security 6 — replace deprecated `WebSecurityConfigurerAdapter` with `SecurityFilterChain`. Migrate `RestTemplate` to `RestClient` (Spring Boot 3.2's new synchronous HTTP client). Run `mvn clean compile` — must succeed with zero errors. Run `mvn test` — all unit tests must pass
+
+**Target: Java 17 / Spring Boot 3.2**

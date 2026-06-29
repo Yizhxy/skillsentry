@@ -1,0 +1,14 @@
+[
+    {
+        "id": "task11",
+        "domain": "airport/domain11.pddl",
+        "problem": "airport/task11.pddl",
+        "plan_output": "task11.txt"
+    },
+    {
+        "id": "task12",
+        "domain": "airport/domain12.pddl",
+        "problem": "airport/task12.pddl",
+        "plan_output": "task12.txt"
+    }
+]

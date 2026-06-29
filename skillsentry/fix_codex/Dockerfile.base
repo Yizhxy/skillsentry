@@ -1,0 +1,38 @@
+# Base image: nvm + node 22 + codex 0.135.0 (patched)
+# All task Dockerfiles should FROM this image.
+#
+# Build once:
+#   docker build -f Dockerfile.base -t codex-base:0.135.0 .
+#
+# Then each task Dockerfile starts with:
+#   FROM codex-base:0.135.0
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    curl bash git vim python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install nvm + node 22 + codex 0.135.0
+# Harbor's codex agent sources ~/.nvm/nvm.sh at runtime, so codex must live here.
+ENV NVM_DIR=/root/.nvm
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash \
+    && . "$NVM_DIR/nvm.sh" \
+    && nvm install 22 \
+    && npm install -g @openai/codex@0.135.0
+
+# Replace core binary with patched version.
+# Bug: bypass_hook_trust not forwarded from exec CLI to app-server thread/start.
+# Fix: thread_start_params_from_config() now injects it into ThreadStartParams.config.
+# The binary file can be named anything — set CODEX_BINARY build arg to match.
+ARG CODEX_BINARY=codex-fixed
+COPY ${CODEX_BINARY} /tmp/codex-patched
+RUN . "$NVM_DIR/nvm.sh" \
+    && CODEX_BIN=$(find /root/.nvm -name "codex" -path "*/codex-linux-x64/vendor/*" | head -1) \
+    && cp /tmp/codex-patched "$CODEX_BIN" \
+    && chmod +x "$CODEX_BIN" \
+    && rm /tmp/codex-patched
+
+WORKDIR /workspace

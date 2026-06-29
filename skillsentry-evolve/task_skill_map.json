@@ -1,0 +1,200 @@
+{
+  "description": "",
+  "source": "Skillfuzz/tasks/single_workflow_skill_tasks.json + Skillfuzz/tasks_2/single_workflow_skill_tasks.json",
+  "tasks": [
+    {
+      "task_name": "econ-detrending-correlation",
+      "skill_name": "timeseries-detrending",
+      "skill_dir": "Skillfuzz/tasks/econ-detrending-correlation/environment/skills/timeseries-detrending",
+      "steps": [
+        "Step 1: Load and clean data — handle missing values, ensure proper time ordering",
+        "Step 2: Convert to real terms — deflate nominal values using appropriate price index",
+        "Step 3: Apply log transformation — for positive level variables",
+        "Step 4: Apply HP filter — use appropriate lambda for data frequency",
+        "Step 5: Analyze cyclical component — compute correlations, volatilities, and business cycle statistics"
+      ]
+    },
+    {
+      "task_name": "hvac-control",
+      "skill_name": "excitation-signal-design",
+      "skill_dir": "Skillfuzz/tasks/hvac-control/environment/skills/excitation-signal-design",
+      "steps": [
+        "Step 1: Start at steady state at a known operating point",
+        "Step 2: Apply a step input (change input from zero to a constant value)",
+        "Step 3: Hold for sufficient duration (3-5 time constants recommended)",
+        "Step 4: Record the response at regular intervals"
+      ]
+    },
+    {
+      "task_name": "manufacturing-fjsp-optimization",
+      "skill_name": "fjsp-baseline-repair-with-downtime-and-policy",
+      "skill_dir": "Skillfuzz/tasks/manufacturing-fjsp-optimization/environment/skills/fjsp-baseline-repair-with-downtime-and-policy",
+      "steps": [
+        "Step 1: Determine precedence-aware repair order: sort operations by (index, baseline start, base index)",
+        "Step 2: For each operation, compute anchor = max(baseline start, end of previous op of same job)",
+        "Step 3: List only allowed machines; if baseline machine is invalid, replace with feasible one",
+        "Step 4: For each candidate machine, scan forward from anchor to find earliest feasible start",
+        "Step 5: Choose option with smallest lexicographic score, respecting policy budgets",
+        "Step 6: Record the operation on the machine timeline in precedence-aware order"
+      ]
+    },
+    {
+      "task_name": "powerlifting-coef-calc",
+      "skill_name": "xlsx",
+      "skill_dir": "Skillfuzz/tasks/powerlifting-coef-calc/environment/skills/xlsx",
+      "steps": [
+        "Step 1: Choose tool (pandas for data, openpyxl for formulas/formatting)",
+        "Step 2: Create/Load workbook or existing file",
+        "Step 3: Modify — add/edit data, formulas, and formatting",
+        "Step 4: Save to file",
+        "Step 5: Recalculate formulas using recalc.py (mandatory if using formulas)",
+        "Step 6: Verify and fix any errors from recalc output"
+      ]
+    },
+    {
+      "task_name": "threejs-structure-parser",
+      "skill_name": "threejs",
+      "skill_dir": "Skillfuzz/tasks/threejs-structure-parser/environment/skills/threejs",
+      "steps": [
+        "Step 1: Load the module, call createScene(), then updateMatrixWorld(true)",
+        "Step 2: Treat named THREE.Group nodes as parts/links",
+        "Step 3: Assign each mesh to its nearest named ancestor",
+        "Step 4: Bake world transforms into geometry before export",
+        "Step 5: Export per-part OBJ (and optionally URDF) using deterministic ordering"
+      ]
+    },
+    {
+      "task_name": "weighted-gdp-calc",
+      "skill_name": "xlsx",
+      "skill_dir": "Skillfuzz/tasks/weighted-gdp-calc/environment/skills/xlsx",
+      "steps": [
+        "Step 1: Choose tool (pandas for data, openpyxl for formulas/formatting)",
+        "Step 2: Create/Load workbook or existing file",
+        "Step 3: Modify — add/edit data, formulas, and formatting",
+        "Step 4: Save to file",
+        "Step 5: Recalculate formulas using recalc.py (mandatory if using formulas)",
+        "Step 6: Verify and fix any errors from recalc output"
+      ]
+    },
+    {
+      "task_name": "virtualhome-agent-planning",
+      "skill_name": "pddl-skills",
+      "skill_dir": "Skillfuzz/tasks/virtualhome-agent-planning/environment/skills/pddl-skills",
+      "steps": [
+        "Step 1: Load PDDL domain and problem files using load_problem()",
+        "Step 2: Generate a plan using generate_plan() with a classical planner",
+        "Step 3: Validate the plan using validate() to confirm goal satisfaction",
+        "Step 4: Save the plan to disk using save_plan()"
+      ]
+    },
+    {
+      "task_name": "protein-expression-analysis",
+      "skill_name": "xlsx",
+      "skill_dir": "Skillfuzz/tasks/protein-expression-analysis/environment/skills/xlsx",
+      "steps": [
+        "Step 1: Choose tool (pandas for data, openpyxl for formulas/formatting)",
+        "Step 2: Create/Load workbook or existing file",
+        "Step 3: Modify — add/edit data, formulas, and formatting",
+        "Step 4: Save to file",
+        "Step 5: Recalculate formulas using recalc.py (mandatory if using formulas)",
+        "Step 6: Verify and fix any errors from recalc output"
+      ]
+    },
+    {
+      "task_name": "glm-lake-mendota",
+      "skill_name": "glm-calibration",
+      "skill_dir": "Skillfuzz/tasks/glm-lake-mendota/environment/skills/glm-calibration",
+      "steps": [
+        "Step 1: Start with default parameters, run GLM, calculate RMSE",
+        "Step 2: Adjust one parameter at a time based on diagnostic pattern",
+        "Step 3: Apply specific parameter adjustments (wind_factor, Kw, coef_mix_hyp, etc.)",
+        "Step 4: Iterate until RMSE < 2.0C",
+        "Step 5: Use optimization (Nelder-Mead) for fine-tuning after manual adjustment"
+      ]
+    },
+    {
+      "task_name": "dapt-intrusion-detection",
+      "skill_name": "pcap-analysis",
+      "skill_dir": "skillsbench/tasks/dapt-intrusion-detection/environment/skills/pcap-analysis",
+      "steps": [
+        "Step 1: Load PCAP file using scapy and extract basic packet counts by protocol (TCP, UDP, ICMP, ARP, IP)",
+        "Step 2: Calculate time-series metrics — duration, packets per minute (avg/max/min), inter-arrival times (IAT)",
+        "Step 3: Compute size statistics — total bytes, average/min/max packet size",
+        "Step 4: Calculate entropy metrics — Shannon entropy for src/dst IPs and ports, count unique ports",
+        "Step 5: Build directed IP graph — count nodes/edges, compute network density, max in/out degree",
+        "Step 6: Analyze temporal patterns — IAT mean/variance/CV, producer/consumer ratio per IP",
+        "Step 7: Extract flow metrics — unique flows (5-tuple), TCP/UDP flows, bidirectional flows",
+        "Step 8: Detect security patterns — port scanning (entropy + SYN-only ratio), DoS (traffic spikes), beaconing (low IAT variance)",
+        "Step 9: Write all computed metrics to CSV file preserving comment lines"
+      ]
+    },
+    {
+      "task_name": "spring-boot-jakarta-migration",
+      "skill_name": "spring-boot-migration",
+      "skill_dir": "skillsbench/tasks/spring-boot-jakarta-migration/environment/skills/spring-boot-migration",
+      "steps": [
+        "Step 1: Analyze current project structure — read pom.xml, identify dependencies and Java/Spring Boot versions",
+        "Step 2: Update Java version from 8 to 21 in pom.xml and verify compiler configuration",
+        "Step 3: Upgrade Spring Boot parent version from 2.7.x to 3.2.x in pom.xml",
+        "Step 4: Migrate javax.* namespace to jakarta.* — update imports in all Java files (javax.persistence, javax.validation, javax.servlet)",
+        "Step 5: Update dependency versions — ensure all dependencies are compatible with Spring Boot 3.2 and Java 21",
+        "Step 6: Migrate to Hibernate 6 — update entity mappings and query syntax if needed",
+        "Step 7: Update Spring Security 6 — replace deprecated WebSecurityConfigurerAdapter with SecurityFilterChain",
+        "Step 8: Migrate RestTemplate to RestClient — update HTTP client code to use new Spring 6 RestClient API",
+        "Step 9: Run mvn clean compile to verify compilation without errors",
+        "Step 10: Run mvn test to ensure all unit tests pass after migration"
+      ]
+    },
+    {
+      "task_name": "3d-scan-calc",
+      "skill_name": "stl-processing",
+      "skill_dir": "Skillfuzz/tasks/3d-scan-calc/environment/skills/stl-processing",
+      "steps": [
+        "Step 1: Parse binary STL file — read header, triangles, and extract Material ID from Attribute Byte Count",
+        "Step 2: Build connectivity graph — identify connected components by triangle adjacency",
+        "Step 3: Filter largest component — remove scanning debris by selecting largest connected set",
+        "Step 4: Calculate volume — sum signed volumes of all triangles in main component",
+        "Step 5: Look up density — match Material ID with material_density_table.md",
+        "Step 6: Compute mass — multiply volume by density and save to mass_report.json"
+      ]
+    },
+    {
+      "task_name": "fix-security-bug",
+      "skill_name": "jackson-security",
+      "skill_dir": "Skillfuzz/tasks/fix-security-bug/environment/skills/jackson-security",
+      "steps": [
+        "Step 1: Analyze vulnerability — identify empty key attack vector in JSON deserialization",
+        "Step 2: Locate deserialization entry point in source code",
+        "Step 3: Implement pre-deserialization validation to detect and reject malicious JSON patterns",
+        "Step 4: Create patch files for affected source files",
+        "Step 5: Apply patches and rebuild with Maven",
+        "Step 6: Verify fix blocks exploits while preserving legitimate functionality"
+      ]
+    },
+    {
+      "task_name": "earthquake-plate-calculation",
+      "skill_name": "geospatial-analysis",
+      "skill_dir": "Skillfuzz/tasks/earthquake-plate-calculation/environment/skills/geospatial-analysis",
+      "steps": [
+        "Step 1: Load earthquake and plate boundary GeoJSON data with geopandas",
+        "Step 2: Filter earthquakes within Pacific plate using spatial .within() operation",
+        "Step 3: Project to metric CRS (EPSG:4087) for accurate distance calculations",
+        "Step 4: Calculate distances from earthquakes to Pacific plate boundaries using .distance()",
+        "Step 5: Identify furthest earthquake using .nlargest() and format output JSON"
+      ]
+    },
+    {
+      "task_name": "stock-data-visualization",
+      "skill_name": "d3-visualization",
+      "skill_dir": "Skillfuzz/tasks/stock-data-visualization/environment/skills/d3-visualization",
+      "steps": [
+        "Step 1: Load and parse stock data from CSV files",
+        "Step 2: Create bubble chart with D3 force simulation — size by market cap, color by sector, cluster by sector",
+        "Step 3: Add interactivity — tooltips on hover, click handlers for selection",
+        "Step 4: Generate data table with formatted market cap values",
+        "Step 5: Implement bidirectional linking between bubble chart and table",
+        "Step 6: Export as standalone HTML with vendored D3 library"
+      ]
+    }
+  ]
+}

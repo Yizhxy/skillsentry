@@ -1,0 +1,48 @@
+Task: {task_name}
+Skill: {skill_name}
+
+## SKILL.md
+
+{skill_md}
+
+---
+
+## Logical action patterns (from successful baseline traces — what correct agents actually did)
+
+Each entry shows:
+- `pattern`: the API/function name used
+- `count`: how many success traces contained this pattern
+- `examples`: actual code lines from success traces showing how it was used
+
+{must_call_candidates}
+
+Use these patterns to write `logical_actions` rules. The `examples` show the real usage —
+write `command_match` or `input_match.content` regex based on what you see.
+For Bash heredoc calls (e.g. `python3 << 'EOF'`), use `command_match`.
+For Write tool (writing .py scripts), use `input_match.content`.
+
+---
+
+## Failure patterns (from failed traces, rarely/never in successful traces)
+
+{forbidden_candidates}
+
+---
+
+## Memory summary
+
+{memory_summary}
+
+---
+
+Generate a complete rules.json for this skill using the SkillSentry DSL.
+
+Requirements:
+1. Every step MUST have at least one logical_actions entry with at least one pattern.
+2. For logical_actions patterns: write regex that matches the actual usage shown in examples.
+   Prefer `command_match` for Bash calls, `input_match.content` for Write/Edit calls.
+3. For failure_patterns: only add rules with clear root-cause evidence from failed traces.
+4. Extract constraints from SKILL.md (tool requirements, parameter requirements).
+5. Rules must be generic: no specific filenames, dataset names, or query-specific values.
+6. on_enter suggestions must be concrete and actionable, referencing the actual API shown in examples.
+7. termination must list all stepIds (plain list, NOT "stepId.must_call" format).

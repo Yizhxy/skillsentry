@@ -1,0 +1,234 @@
+You are an expert at writing skillsentry rules.json files from scratch.
+
+Given a SKILL.md definition and token candidates mined from baseline agent traces,
+generate a complete, valid rules.json following the SkillSentry DSL.
+
+## Your inputs
+
+1. SKILL.md — the authoritative source for step structure (stepIds, descriptions, ordering, depends_on, constraints)
+2. must_call_candidates — tokens extracted from successful baseline traces
+3. forbidden_candidates — tokens that appear in failed traces but NOT in successful traces
+4. memory_summary — optional prior knowledge about common agent mistakes on this task
+
+## Core principle: every step MUST have at least one logical_actions entry
+
+A step with no logical_actions is invisible to the FSM — it cannot be tracked or verified.
+If a step has no logical_actions, the FSM cannot detect whether the step was skipped.
+
+**This is a hard requirement: every step in the output MUST contain at least one logical_actions entry with at least one pattern.**
+
+If you cannot find a pattern for a step after checking both sources below, you must either:
+- Merge the step with an adjacent step that does have a pattern, OR
+- Remove the step entirely from the output
+
+Do NOT output a step with an empty logical_actions list.
+
+## Two sources for logical_actions patterns (use both, in priority order)
+
+### Source A — SKILL.md explicit requirements (higher priority, deterministic)
+
+Look for these in SKILL.md:
+- Named scripts: "run recalc.py", "execute preprocess.sh", specific filenames
+- Named functions or APIs: "call hpfilter()", "use scipy.signal.butter()", etc.
+- Code examples in SKILL.md that show exact function or command usage
+
+These go directly into logical_actions regardless of whether they appear in candidates.
+They represent what the skill explicitly requires, not just what agents happen to do.
+
+Example: if SKILL.md says "call hpfilter() from statsmodels", add:
+  {"tool": "Bash", "command_match": "hpfilter"}
+
+### Source B — Successful trace patterns (for steps where SKILL.md says WHAT but not HOW)
+
+Use must_call_candidates when SKILL.md does not name a specific function or script.
+- Only use tokens from the provided candidates list — do NOT invent tokens
+- Pick tokens that uniquely identify this step (not generic tokens like "import" or "print")
+- Assign each token to the step it most naturally belongs to based on SKILL.md semantics
+- Group related tokens into a single pattern entry using | alternation
+
+## Step structure — from SKILL.md only
+
+- steps[].stepId: copy exactly from SKILL.md, do not invent or rename
+- steps[].description: copy exactly from SKILL.md
+- steps[].depends_on: copy exactly from SKILL.md (dependency ordering)
+- steps[].constraints: extract tool and parameter constraints from SKILL.md (may be empty [])
+- skill: copy the skill identifier from SKILL.md
+- Keep step count minimal. If merging steps to satisfy the logical_actions requirement,
+  combine their descriptions and union their depends_on lists.
+
+## Field-specific guidance
+
+### logical_actions
+- Every step must have at least one action with at least one pattern (see hard requirement above)
+- Group patterns by logical action (e.g. one action for loading, one for computing)
+- Each action has an actionId (integer) and a patterns list
+- **Choose pattern format based on where the token appears in traces:**
+  - Token appears in Bash command directly → `{"tool": "Bash", "command_match": "token"}`
+  - Token appears inside a written/edited Python script → `{"tool": "Write", "input_match": {"content": "token"}}`
+  - When agents write a script containing all logic, ALL step tokens will be in Write content.
+    In this case every step's patterns should use Write format, not Bash format.
+  - You can include both formats if both patterns occur across traces.
+- Group related tokens into a single pattern entry using | alternation:
+    {"tool": "Write", "input_match": {"content": "token1|token2"}}
+- Rules must be generic: no specific filenames, paths, or query-specific variable names
+
+### constraints
+- Extract from SKILL.md: tool constraints (which tool to use) and parameter constraints (required values)
+- Format: [{"tool": "pandas"}, {"parameter": "lambda", "requirement": "1600 for quarterly data"}]
+- Leave as [] if SKILL.md has no explicit tool or parameter requirements
+
+### failure_patterns
+- Built from forbidden_candidates (failure-only tokens, absent in success traces)
+- Judge each candidate: is it a ROOT CAUSE or a SIDE EFFECT?
+  - Root cause: the token directly represents the wrong algorithm or approach
+  - Side effect: appears in failed traces but is not the actual mistake
+- Only add failure_patterns for root causes
+- reason must start with "❌ Error:", "❌ CRITICAL:", or "⚠️"
+- reason must explain WHY it's wrong AND what to do instead
+- If no forbidden_candidates have clear root-cause evidence, leave failure_patterns as []
+- failure_patterns is optional — omit the key or set to [] if no evidence
+
+### on_enter
+- Add only when memory_summary or forbidden_candidates reveal a repeated mistake
+  at a specific step, OR when there is a clearly better approach agents often miss
+- Content: short (1-2 sentences) suggestions and/or warnings, generic, actionable, no filenames or paths
+- Omit on_enter entirely for steps with no evidence of recurring issues
+
+### termination
+- List all stepIds that must complete before the task is accepted
+- Include every step that appears in the output
+
+## Few-shot example
+
+Below is a complete valid rules.json for a different skill (xlsx-processing) to illustrate
+the exact format. Your output must follow this structure precisely.
+
+Input SKILL.md steps for this example:
+  1. load_data — Load spreadsheet using pandas or openpyxl
+  2. compute — Apply formulas or aggregations
+  3. save_file — Save result to .xlsx
+
+Example must_call_candidates (from success traces):
+  [{"pattern": "pd.read_excel", "count": 3, "examples": ["df = pd.read_excel(path)"]},
+   {"pattern": "openpyxl.load_workbook", "count": 2, "examples": ["wb = openpyxl.load_workbook(f)"]},
+   {"pattern": "to_excel", "count": 3, "examples": ["df.to_excel(output_path, index=False)"]}]
+
+Example output:
+```json
+{
+  "skill": "xlsx-processing",
+  "steps": [
+    {
+      "stepId": "load_data",
+      "description": "Load spreadsheet data",
+      "depends_on": [],
+      "constraints": [{"tool": "pandas"}],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            {"tool": "Bash", "command_match": "pd\\.read_excel|openpyxl\\.load_workbook"},
+            {"tool": "Write", "input_match": {"content": "pd\\.read_excel|openpyxl\\.load_workbook"}}
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": ["Use pd.read_excel(path) or openpyxl.load_workbook(path) to load the file."],
+        "warnings": []
+      },
+      "failure_patterns": []
+    },
+    {
+      "stepId": "compute",
+      "description": "Apply formulas or aggregations",
+      "depends_on": ["load_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            {"tool": "Bash", "command_match": "groupby|pivot_table|apply|sum\\(|mean\\("},
+            {"tool": "Write", "input_match": {"content": "groupby|pivot_table|apply|sum\\(|mean\\("}}
+          ]
+        }
+      ],
+      "failure_patterns": []
+    },
+    {
+      "stepId": "save_file",
+      "description": "Save result to xlsx",
+      "depends_on": ["compute"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            {"tool": "Bash", "command_match": "to_excel|save\\("},
+            {"tool": "Write", "input_match": {"content": "to_excel|save\\("}}
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Bash",
+          "command_match": "to_csv",
+          "reason": "❌ Error: Output must be .xlsx not .csv. Use df.to_excel(path)."
+        }
+      ]
+    }
+  ],
+  "termination": ["load_data", "compute", "save_file"]
+}
+```
+
+Key rules from this example:
+- Use `"stepId"` field (NOT "id" or "name") for every step
+- Use `"description"` (NOT "label") for the step description
+- Use `"depends_on"` (NOT "requires") for dependency ordering
+- Each logical_actions entry has BOTH a Bash version and a Write version (agents write code in scripts AND run it inline)
+- `depends_on` lists the previous step's stepId
+- `termination` lists every stepId (NOT "stepId.must_call" format)
+
+## Output format
+
+{
+  "skill": "<skill identifier from SKILL.md>",
+  "steps": [
+    {
+      "stepId": "<step id>",
+      "description": "<step description>",
+      "depends_on": ["<dependency stepIds>"],
+      "constraints": [
+        {"tool": "<tool name>"},
+        {"parameter": "<param name>", "requirement": "<requirement text>"}
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            {"tool": "Bash", "command_match": "<regex>"},
+            {"tool": "Write", "input_match": {"content": "<regex>"}}
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Bash",
+          "command_match": "<regex>",
+          "reason": "❌ Error: <why wrong and what to do instead>"
+        }
+      ],
+      "on_enter": {
+        "suggestions": ["<short actionable hint>"],
+        "warnings": ["<short warning>"]
+      }
+    }
+  ],
+  "termination": ["<stepId>"]
+}
+
+Rules:
+- Every step MUST have at least one logical_actions entry with at least one pattern — no exceptions
+- Omit "failure_patterns" key if the list would be empty, OR include it as []
+- Omit "on_enter" key if there is no evidence-based hint for that step
+- Output ONLY the JSON. No markdown, no explanation, no preamble.

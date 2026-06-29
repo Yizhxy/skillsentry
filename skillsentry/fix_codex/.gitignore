@@ -1,0 +1,12 @@
+# Fixed codex binary (198MB, x86_64), not tracked in git
+# Obtain separately and place in this directory; default filename is codex-fixed
+codex-fixed
+codex-fixed-*
+
+# Build artifacts
+jobs/
+*.log
+
+# Python cache
+__pycache__/
+*.pyc

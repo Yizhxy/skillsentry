@@ -1,0 +1,172 @@
+## SkillSentry DSL Reference
+
+A rules.json file defines runtime guidance for one skill. The runtime uses it to:
+1. Track which workflow steps the agent has completed (FSM via logical_actions)
+2. Block known wrong approaches before they execute (failure_patterns)
+3. Inject step-level hints when the agent enters a step (on_enter + constraints)
+4. Verify all required steps completed before accepting the final output (termination)
+
+### Top-level structure
+
+```json
+{
+  "skill": "<skill identifier>",
+  "steps": [ <Step>, ... ],
+  "termination": ["<stepId>", ...]
+}
+```
+
+- **skill**: identifier string matching the skill directory name
+- **steps**: ordered list of Step objects defining the workflow
+- **termination**: list of stepIds that MUST all be satisfied before the agent can stop; the runtime blocks the Stop event if any are missing
+
+---
+
+### Step object
+
+```json
+{
+  "stepId": "load_data",
+  "description": "Load and clean the input data",
+  "depends_on": ["previous_step_id"],
+  "constraints": [ <Constraint>, ... ],
+  "logical_actions": [ <LogicalAction>, ... ],
+  "failure_patterns": [ <Signature>, ... ],
+  "on_enter": { "suggestions": ["..."], "warnings": ["..."] }
+}
+```
+
+| Field | Required | Purpose |
+|-------|----------|---------|
+| `stepId` | yes | Unique identifier; referenced by `depends_on` and `termination` |
+| `description` | yes | Human-readable step label; shown in hints to the agent |
+| `depends_on` | yes | List of stepIds that must be satisfied before this step can be credited |
+| `constraints` | yes | Static tool/parameter requirements extracted from SKILL.md (may be `[]`) |
+| `logical_actions` | yes | Defines what the agent must DO to satisfy this step (FSM trigger) |
+| `failure_patterns` | no | Patterns that indicate the agent is doing something wrong (fires before execution) |
+| `on_enter` | no | Hints injected to the agent the first time this step becomes active |
+
+---
+
+### Constraint object
+
+Two sub-types, both go in the `constraints` list:
+
+```json
+{ "tool": "pandas" }
+```
+*ToolConstraint* — the step requires use of this tool/library.
+
+```json
+{ "parameter": "lambda", "requirement": "must be 1600 for quarterly data" }
+```
+*ParameterConstraint* — a parameter has a required value or condition.
+
+At runtime, constraints are formatted as text and appended to the on_enter hint. They do NOT block actions — they are advisory reminders only.
+
+---
+
+### LogicalAction object
+
+A logical action groups alternative patterns that all realise the same logical intent.
+A step is **satisfied** when ALL of its logical_actions have at least one pattern matched.
+
+```json
+{
+  "actionId": 1,
+  "patterns": [ <Signature>, ... ]
+}
+```
+
+- **actionId**: integer, unique within the step; used for referencing in updates
+- **patterns**: one or more Signature objects; the action is matched if ANY pattern fires (OR logic)
+
+A step with multiple logical_actions requires ALL of them to be matched (AND logic between actions).
+
+**When to use multiple logical_actions vs multiple patterns in one action:**
+- Multiple patterns in one action → alternative ways to do the SAME thing (OR)
+- Multiple logical_actions → distinct sub-tasks that ALL must happen (AND)
+
+---
+
+### Signature object
+
+Used in both `logical_actions[].patterns` and `failure_patterns`.
+
+```json
+{
+  "tool": "Bash",
+  "command_match": "hpfilter|sm\\.tsa\\.filters",
+  "reason": "❌ Error: ..."
+}
+```
+
+```json
+{
+  "tool": "Write",
+  "input_match": { "content": "pd\\.read_csv|pd\\.read_excel" }
+}
+```
+
+| Field | Purpose |
+|-------|---------|
+| `tool` | Tool name to match: `"Bash"`, `"Write"`, `"Edit"`. Omit to match any tool. |
+| `command_match` | Regex matched against the Bash `command` string |
+| `input_match` | Dict of `{"content": "<regex>"}` matched against Write/Edit content |
+| `path_match` | Regex matched against the file path argument (optional) |
+| `reason` | Required on `failure_patterns`; explain WHY it's wrong and what to do instead. Must start with `"❌ Error:"`, `"❌ CRITICAL:"`, or `"⚠️"` |
+
+**Matching rules:**
+- For `logical_actions` patterns: a match CREDITS the step (advances FSM)
+- For `failure_patterns`: a match BLOCKS the action (soft-deny with reason hint)
+- All specified fields must match (AND); omitted fields are wildcards
+- `command_match` only fires on Bash tool calls
+- `input_match.content` fires on Write/Edit tool calls (checks file content being written)
+
+---
+
+### on_enter object
+
+Injected as context to the agent when the FSM first enters this step.
+
+```json
+{
+  "suggestions": [
+    "Use pd.read_csv() or pd.read_excel() to load the file — do not use open()."
+  ],
+  "warnings": [
+    "Do not assume input rows are already sorted chronologically."
+  ]
+}
+```
+
+- **suggestions**: positive guidance — what TO do, which API to use
+- **warnings**: negative guidance — common mistakes to avoid at this step
+- Keep each entry to 1-2 sentences, generic (no specific filenames or query values)
+- `on_enter` may be omitted entirely if there is nothing step-specific to say
+
+---
+
+### How the runtime uses these fields (FSM logic)
+
+1. **Before each agent action** — the hook checks:
+   - Does this action match any `failure_patterns`? → soft-deny + reason
+   - Does this action match a `logical_actions` pattern? → credit the logical_action
+   - Are the action's step's `depends_on` all satisfied? → if not, soft-deny with "complete step X first"
+   - Has the step's streak exceeded the stale-budget threshold? → hint about next step
+
+2. **When a step first becomes active** (its `depends_on` are all satisfied):
+   - Inject `on_enter` suggestions + warnings + formatted `constraints` into agent context
+
+3. **When agent signals task completion** (Stop event):
+   - Check all `termination` stepIds are satisfied → if not, hard-deny with missing steps list
+
+---
+
+### Diagnosis field names (for Stage 2 output)
+
+When diagnosing, use these exact field names:
+- `"logical_actions"` — step's action patterns (FSM triggers)
+- `"failure_patterns"` — step's forbidden patterns
+- `"on_enter"` — step's hint text
+- `"constraints"` — step's tool/parameter constraints
