@@ -1,0 +1,91 @@
+{
+  "skill": "excitation-signal-design",
+  "steps": [
+    {
+      "stepId": "run_calibration",
+      "description": "Run calibration test — apply a step input from steady state and record the response",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "python|hvac_simulator|simulate|step" },
+            { "tool": "Write", "input_match": { "content": "calibration|heater_power|step.*input|steady.*state" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Save calibration_log.json with 'heater_power_test' as a scalar number (not a list)."
+        ],
+        "warnings": [
+          "heater_power_test must be a scalar (int or float), NOT a list or dict."
+        ]
+      },
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "heater_power_test.*segments|heater_power_test.*\\[\\[" },
+          "reason": "❌ Error: heater_power_test must be a single scalar, not a list of segments."
+        }
+      ]
+    },
+    {
+      "stepId": "estimate_parameters",
+      "description": "Estimate system parameters — fit first-order model (K, tau) from step response",
+      "depends_on": ["run_calibration"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "curve_fit|scipy|optimize|exponential|tau" },
+            { "tool": "Write", "input_match": { "content": "curve_fit|K|tau|r_squared|fitting" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Fit: y(t) = K * (1 - exp(-t/tau)) using scipy.optimize.curve_fit. K within ±15% and tau within ±20% of true values."
+        ]
+      }
+    },
+    {
+      "stepId": "tune_controller",
+      "description": "Calculate PID controller gains using IMC or Ziegler-Nichols tuning",
+      "depends_on": ["estimate_parameters"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "Kp|Ki|Kd|IMC|tuning|gain" },
+            { "tool": "Write", "input_match": { "content": "Kp|Ki|Kd|gains|tuning|IMC" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "run_control",
+      "description": "Run closed-loop PID control and verify setpoint tracking performance",
+      "depends_on": ["tune_controller"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "PID|control|setpoint|error|integral" },
+            { "tool": "Write", "input_match": { "content": "control|setpoint|error|heater_power|overshoot|settling" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Save control_log.json and metrics.json — both required by the verifier."
+        ]
+      }
+    }
+  ],
+  "termination": ["run_calibration", "estimate_parameters", "tune_controller", "run_control"]
+}

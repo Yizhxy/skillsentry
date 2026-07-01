@@ -1,0 +1,141 @@
+{
+  "skill": "mesh-analysis",
+  "steps": [
+    {
+      "stepId": "parse_stl_binary",
+      "description": "Parse binary STL file — read header, triangle normals/vertices, and Attribute Byte Count for Material ID",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "struct\\.unpack|open.*rb|read.*stl|binary.*stl" } },
+            { "tool": "Bash", "command_match": "python.*stl|struct.*unpack" }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "mesh\\.load|trimesh\\.load|stl\\.load|import trimesh|import stl" },
+          "reason": "⚠️ Do not use trimesh/numpy-stl to load the file — the Material ID is stored in Attribute Byte Count (bytes 80-81 of each triangle), which these libraries discard. Parse the binary format directly with struct.unpack."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Binary STL layout: 80-byte header, 4-byte uint32 triangle count, then per-triangle: 12 floats (normal + 3 vertices) + 2-byte attribute (Material ID).",
+          "Read Material ID: struct.unpack('<H', f.read(2))[0] after reading each triangle's normal and vertices."
+        ],
+        "warnings": [
+          "The Attribute Byte Count (2 bytes after each triangle) contains the Material ID — do NOT skip it."
+        ]
+      }
+    },
+    {
+      "stepId": "build_connectivity_graph",
+      "description": "Build triangle adjacency graph by shared edges to identify connected components",
+      "depends_on": ["parse_stl_binary"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "adjacency|connected.*component|union_find|shared.*edge|UnionFind" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Two triangles are adjacent if they share an edge (any 2 of their 3 vertices are identical).",
+          "Use Union-Find (disjoint sets) for efficient connectivity: union triangles that share any edge."
+        ]
+      }
+    },
+    {
+      "stepId": "filter_largest_component",
+      "description": "Identify and keep the largest connected component — discard scanning debris",
+      "depends_on": ["build_connectivity_graph"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "largest.*component|max.*len.*component|nlargest|filter.*component" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Group triangles by component ID, then keep the group with the most triangles."
+        ]
+      }
+    },
+    {
+      "stepId": "compute_volume",
+      "description": "Compute mesh volume using signed volume formula over all triangles in the main component",
+      "depends_on": ["filter_largest_component"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "signed.*volume|divergence.*theorem|cross.*dot|volume.*sum|0\\.0.*np\\.sum" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "bounding_box|aabb|extent.*prod|bbox.*volume" },
+          "reason": "❌ Do not use bounding box volume — compute true mesh volume using the signed volume (divergence) formula: V = sum(v1 · (v2 × v3)) / 6."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Signed volume per triangle: V_i = v0 · (v1 × v2) / 6. Sum V_i and take abs(sum) for total mesh volume."
+        ]
+      }
+    },
+    {
+      "stepId": "lookup_material_density",
+      "description": "Look up material density from material_density_table.md using the extracted Material ID",
+      "depends_on": ["parse_stl_binary"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "material_density_table\\.md$" },
+            { "tool": "Bash", "command_match": "cat.*material_density|grep.*density" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Read material_density_table.md to find the density (g/cm³) for the Material ID from the STL."
+        ]
+      }
+    },
+    {
+      "stepId": "compute_mass_and_save",
+      "description": "Compute mass = volume × density (with correct unit conversions) and save to mass_report.json",
+      "depends_on": ["compute_volume", "lookup_material_density"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "mass_report|mass.*json|json\\.dump.*mass" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Convert volume from mm³ to cm³ (divide by 1000) before multiplying by density in g/cm³. Save mass in grams to mass_report.json."
+        ]
+      }
+    }
+  ],
+  "termination": ["filter_largest_component", "compute_volume", "lookup_material_density", "compute_mass_and_save"]
+}

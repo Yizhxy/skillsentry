@@ -2,12 +2,14 @@
 # Run SkillSentry guidance generation.
 #
 # Usage:
-#   bash run.sh <task-name> initialize        # Initialization Stage
-#   bash run.sh <task-name> evolve            # Self-evolving Stage (3 rounds default)
-#   bash run.sh <task-name> evolve --rounds 5
+#   bash run.sh <task-name> initialize                    # Initialization Stage
+#   bash run.sh <task-name> evolve                        # Self-evolving (10 iterations default)
+#   bash run.sh <task-name> evolve --iterations 5         # Custom iteration count
+#   bash run.sh <task-name> evolve --queries-per-iter 3   # Custom queries per iteration
+#   bash run.sh <task-name> evaluate                      # Evaluate on Q_test
 #
 # Before the first run, prepare the data split:
-#   python utils/prepare_data.py              # splits data/raw → data/evolve
+#   python utils/prepare_data.py              # converts raw → data/evolve/iter_* format
 
 set -euo pipefail
 

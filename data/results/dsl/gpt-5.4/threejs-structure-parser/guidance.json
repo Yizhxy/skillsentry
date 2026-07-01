@@ -1,0 +1,122 @@
+{
+  "skill": "threejs",
+  "steps": [
+    {
+      "stepId": "load_scene",
+      "description": "Load the module, call createScene(), then immediately call updateMatrixWorld(true)",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "createScene|import.*object\\.js" },
+            { "tool": "Write", "input_match": { "content": "createScene|import.*object\\.js" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "createScene\\(\\)(?!.*updateMatrixWorld)" },
+          "reason": "❌ CRITICAL: Call root.updateMatrixWorld(true) immediately after createScene()."
+        }
+      ]
+    },
+    {
+      "stepId": "identify_parts",
+      "description": "Treat ONLY named THREE.Group nodes with children as links — do NOT treat top-level scene nodes or meshes as links",
+      "depends_on": ["load_scene"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "THREE\\.Group|isGroup|obj\\.name|traverse" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "A link is a named THREE.Group that is NOT the root scene object. Check: obj.isGroup && obj.name && obj !== root.",
+          "Verify the resulting link list against the expected output — extra entries mean you are including the root or non-link nodes."
+        ],
+        "warnings": [
+          "Do NOT treat the root scene object itself as a link. The root should be traversed but never added to the link list."
+        ]
+      },
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "links\\.push\\(root\\)|links\\.push\\(scene\\)" },
+          "reason": "❌ CRITICAL: Do not add the root scene object to the link list. Only named child groups are links."
+        }
+      ]
+    },
+    {
+      "stepId": "assign_meshes",
+      "description": "Assign each mesh to its nearest named ancestor group (the immediate link parent)",
+      "depends_on": ["identify_parts"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "parent|ancestor|traverse|findGroup|nearest" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "bake_transforms",
+      "description": "Bake world transforms: applyMatrix4(matrixWorld) then toNonIndexed()",
+      "depends_on": ["assign_meshes"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "applyMatrix4|matrixWorld|toNonIndexed" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Bash",
+          "command_match": "node.*scripts/export_link_objs\\.mjs",
+          "reason": "⚠️ The provided export_link_objs.mjs is missing toNonIndexed(). Write your own baking code."
+        },
+        {
+          "tool": "Write",
+          "input_match": { "content": "applyMatrix4.*matrixWorld(?!.*toNonIndexed)" },
+          "reason": "❌ CRITICAL: After applyMatrix4(mesh.matrixWorld), call toNonIndexed() if geom.index is set."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Baking: let geom = mesh.geometry.clone(); geom.applyMatrix4(mesh.matrixWorld); if (geom.index) geom = geom.toNonIndexed();"
+        ]
+      }
+    },
+    {
+      "stepId": "export_objs",
+      "description": "Export per-part OBJ using deterministic (sorted) part ordering",
+      "depends_on": ["bake_transforms"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "OBJExporter|writeFileSync.*\\.obj" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Sort link names with localeCompare before exporting."
+        ]
+      }
+    }
+  ],
+  "termination": ["bake_transforms", "export_objs"]
+}
