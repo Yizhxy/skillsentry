@@ -1,11 +1,11 @@
 {
   "description": "",
-  "source": "Skillfuzz/tasks/single_workflow_skill_tasks.json + Skillfuzz/tasks_2/single_workflow_skill_tasks.json",
+  "source": "skillsentry_tasks/tasks/single_workflow_skill_tasks.json + skillsentry_tasks/tasks_2/single_workflow_skill_tasks.json",
   "tasks": [
     {
       "task_name": "econ-detrending-correlation",
       "skill_name": "timeseries-detrending",
-      "skill_dir": "Skillfuzz/tasks/econ-detrending-correlation/environment/skills/timeseries-detrending",
+      "skill_dir": "skillsentry_tasks/tasks/econ-detrending-correlation/environment/skills/timeseries-detrending",
       "steps": [
         "Step 1: Load and clean data — handle missing values, ensure proper time ordering",
         "Step 2: Convert to real terms — deflate nominal values using appropriate price index",
@@ -17,7 +17,7 @@
     {
       "task_name": "hvac-control",
       "skill_name": "excitation-signal-design",
-      "skill_dir": "Skillfuzz/tasks/hvac-control/environment/skills/excitation-signal-design",
+      "skill_dir": "skillsentry_tasks/tasks/hvac-control/environment/skills/excitation-signal-design",
       "steps": [
         "Step 1: Start at steady state at a known operating point",
         "Step 2: Apply a step input (change input from zero to a constant value)",
@@ -28,7 +28,7 @@
     {
       "task_name": "manufacturing-fjsp-optimization",
       "skill_name": "fjsp-baseline-repair-with-downtime-and-policy",
-      "skill_dir": "Skillfuzz/tasks/manufacturing-fjsp-optimization/environment/skills/fjsp-baseline-repair-with-downtime-and-policy",
+      "skill_dir": "skillsentry_tasks/tasks/manufacturing-fjsp-optimization/environment/skills/fjsp-baseline-repair-with-downtime-and-policy",
       "steps": [
         "Step 1: Determine precedence-aware repair order: sort operations by (index, baseline start, base index)",
         "Step 2: For each operation, compute anchor = max(baseline start, end of previous op of same job)",
@@ -41,7 +41,7 @@
     {
       "task_name": "powerlifting-coef-calc",
       "skill_name": "xlsx",
-      "skill_dir": "Skillfuzz/tasks/powerlifting-coef-calc/environment/skills/xlsx",
+      "skill_dir": "skillsentry_tasks/tasks/powerlifting-coef-calc/environment/skills/xlsx",
       "steps": [
         "Step 1: Choose tool (pandas for data, openpyxl for formulas/formatting)",
         "Step 2: Create/Load workbook or existing file",
@@ -54,7 +54,7 @@
     {
       "task_name": "threejs-structure-parser",
       "skill_name": "threejs",
-      "skill_dir": "Skillfuzz/tasks/threejs-structure-parser/environment/skills/threejs",
+      "skill_dir": "skillsentry_tasks/tasks/threejs-structure-parser/environment/skills/threejs",
       "steps": [
         "Step 1: Load the module, call createScene(), then updateMatrixWorld(true)",
         "Step 2: Treat named THREE.Group nodes as parts/links",
@@ -66,7 +66,7 @@
     {
       "task_name": "weighted-gdp-calc",
       "skill_name": "xlsx",
-      "skill_dir": "Skillfuzz/tasks/weighted-gdp-calc/environment/skills/xlsx",
+      "skill_dir": "skillsentry_tasks/tasks/weighted-gdp-calc/environment/skills/xlsx",
       "steps": [
         "Step 1: Choose tool (pandas for data, openpyxl for formulas/formatting)",
         "Step 2: Create/Load workbook or existing file",
@@ -79,7 +79,7 @@
     {
       "task_name": "virtualhome-agent-planning",
       "skill_name": "pddl-skills",
-      "skill_dir": "Skillfuzz/tasks/virtualhome-agent-planning/environment/skills/pddl-skills",
+      "skill_dir": "skillsentry_tasks/tasks/virtualhome-agent-planning/environment/skills/pddl-skills",
       "steps": [
         "Step 1: Load PDDL domain and problem files using load_problem()",
         "Step 2: Generate a plan using generate_plan() with a classical planner",
@@ -90,7 +90,7 @@
     {
       "task_name": "protein-expression-analysis",
       "skill_name": "xlsx",
-      "skill_dir": "Skillfuzz/tasks/protein-expression-analysis/environment/skills/xlsx",
+      "skill_dir": "skillsentry_tasks/tasks/protein-expression-analysis/environment/skills/xlsx",
       "steps": [
         "Step 1: Choose tool (pandas for data, openpyxl for formulas/formatting)",
         "Step 2: Create/Load workbook or existing file",
@@ -103,7 +103,7 @@
     {
       "task_name": "glm-lake-mendota",
       "skill_name": "glm-calibration",
-      "skill_dir": "Skillfuzz/tasks/glm-lake-mendota/environment/skills/glm-calibration",
+      "skill_dir": "skillsentry_tasks/tasks/glm-lake-mendota/environment/skills/glm-calibration",
       "steps": [
         "Step 1: Start with default parameters, run GLM, calculate RMSE",
         "Step 2: Adjust one parameter at a time based on diagnostic pattern",
@@ -148,7 +148,7 @@
     {
       "task_name": "3d-scan-calc",
       "skill_name": "stl-processing",
-      "skill_dir": "Skillfuzz/tasks/3d-scan-calc/environment/skills/stl-processing",
+      "skill_dir": "skillsentry_tasks/tasks/3d-scan-calc/environment/skills/stl-processing",
       "steps": [
         "Step 1: Parse binary STL file — read header, triangles, and extract Material ID from Attribute Byte Count",
         "Step 2: Build connectivity graph — identify connected components by triangle adjacency",
@@ -161,7 +161,7 @@
     {
       "task_name": "fix-security-bug",
       "skill_name": "jackson-security",
-      "skill_dir": "Skillfuzz/tasks/fix-security-bug/environment/skills/jackson-security",
+      "skill_dir": "skillsentry_tasks/tasks/fix-security-bug/environment/skills/jackson-security",
       "steps": [
         "Step 1: Analyze vulnerability — identify empty key attack vector in JSON deserialization",
         "Step 2: Locate deserialization entry point in source code",
@@ -174,7 +174,7 @@
     {
       "task_name": "earthquake-plate-calculation",
       "skill_name": "geospatial-analysis",
-      "skill_dir": "Skillfuzz/tasks/earthquake-plate-calculation/environment/skills/geospatial-analysis",
+      "skill_dir": "skillsentry_tasks/tasks/earthquake-plate-calculation/environment/skills/geospatial-analysis",
       "steps": [
         "Step 1: Load earthquake and plate boundary GeoJSON data with geopandas",
         "Step 2: Filter earthquakes within Pacific plate using spatial .within() operation",
@@ -186,7 +186,7 @@
     {
       "task_name": "stock-data-visualization",
       "skill_name": "d3-visualization",
-      "skill_dir": "Skillfuzz/tasks/stock-data-visualization/environment/skills/d3-visualization",
+      "skill_dir": "skillsentry_tasks/tasks/stock-data-visualization/environment/skills/d3-visualization",
       "steps": [
         "Step 1: Load and parse stock data from CSV files",
         "Step 2: Create bubble chart with D3 force simulation — size by market cap, color by sector, cluster by sector",

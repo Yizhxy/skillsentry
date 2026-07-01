@@ -19,7 +19,7 @@ from typing import Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import config
-from utils.task_helpers import TraceData, load_trace_from_trial, get_skill_name
+from utils.task_data import TraceData, load_trace_from_trial, get_skill_name
 
 
 def setup_task(
@@ -80,10 +80,6 @@ def setup_task(
         "SKILLSENTRY_MODE":      "strict",
         "SKILLSENTRY_LOG":       "/logs/agent/skillsentry.log",
         "SKILLSENTRY_STATE_DIR": "/logs/agent/skillsentry_state",
-        "LLM_API_BASE":          config.LLM_API_BASE,
-        "LLM_MODEL":             config.LLM_MODEL,
-        "LLM_API_KEY":           config.LLM_API_KEY,
-        "OPENAI_API_KEY":        config.LLM_API_KEY,
         "PYTHONPATH":            "/root",
     }
     if skillsentry_skill:
@@ -116,7 +112,7 @@ def _patch_dockerfile(env_dir: Path) -> None:
         return
 
     content = df_path.read_text(encoding="utf-8")
-    if "# SkillSentry-grpo" in content:
+    if "# SkillSentry-evolve" in content:
         return  # already patched
 
     # Write a shell snippet that copies settings to $CLAUDE_CONFIG_DIR at runtime
@@ -133,7 +129,7 @@ def _patch_dockerfile(env_dir: Path) -> None:
 
     ss_block = (
         "\n"
-        "# SkillSentry-grpo: inject settings at container startup via BASH_ENV\n"
+        "# SkillSentry-evolve: inject settings at container startup via BASH_ENV\n"
         "COPY settings.json /root/.claude/settings.json\n"
         "# BASH_ENV makes every non-interactive bash source /root/.ss_init.sh\n"
         "# harbor's setup_command runs as bash -c, so this fires before setup runs\n"
@@ -197,10 +193,6 @@ def run_trial(task_dir: Path, output_dir: Path) -> Optional[Path]:
         "--ae", f"SKILLSENTRY_RULES_DIR=/root/skillsentry",
         "--ae", f"SKILLSENTRY_MODE=strict",
         "--ae", f"SKILLSENTRY_LOG=/logs/agent/skillsentry.log",
-        "--ae", f"LLM_API_BASE={config.LLM_API_BASE}",
-        "--ae", f"LLM_MODEL={config.LLM_MODEL}",
-        "--ae", f"LLM_API_KEY={config.LLM_API_KEY}",
-        "--ae", f"OPENAI_API_KEY={config.LLM_API_KEY}",
         "--ae", "PYTHONPATH=/root",
     ]
     try:

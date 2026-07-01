@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run TDRR bootstrap on econ-detrending-correlation using baseline traces.
-# Keys and API config sourced from fuzzer.sh / baseline_run.sh.
+# Run guidance generation (initialization stage) on a task using baseline traces.
+# Keys and API config sourced from the environment.
 
 set -euo pipefail
 
@@ -28,29 +28,27 @@ export HOOKS_SRC="/YOUR/PATH/TO/skillsentry/hooks"
 export OUTPUT_DIR="${SCRIPT_DIR}/output_rules"
 
 # --------------------------------------------------------------------
-# TDRR tuning
+# Mining tuning
 # --------------------------------------------------------------------
 export PATTERN_MIN_FREQ="${PATTERN_MIN_FREQ:-1}"
 export MAX_TOOL_CALLS_IN_PROMPT="${MAX_TOOL_CALLS_IN_PROMPT:-30}"
-# Rollback if reward drops by more than this (default -0.4 = 40 percentage points)
-export ROLLBACK_THRESHOLD="${ROLLBACK_THRESHOLD:--0.4}"
 
 # --------------------------------------------------------------------
 # Run
 # --------------------------------------------------------------------
 TASK="${1:-econ-detrending-correlation}"
-MODE="${2:-bootstrap}"
+MODE="${2:-initialize}"
 
 LOG_DIR="${SCRIPT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/${TASK}_${MODE}_$(date +%Y%m%d_%H%M%S).log"
 
-echo "[tdrr] task        = ${TASK}"
-echo "[tdrr] mode        = ${MODE}"
-echo "[tdrr] llm_model   = ${LLM_MODEL}"
-echo "[tdrr] api_base    = ${LLM_API_BASE}"
-echo "[tdrr] output_dir  = ${OUTPUT_DIR}"
-echo "[tdrr] log_file    = ${LOG_FILE}"
+echo "[skillsentry] task        = ${TASK}"
+echo "[skillsentry] mode        = ${MODE}"
+echo "[skillsentry] llm_model   = ${LLM_MODEL}"
+echo "[skillsentry] api_base    = ${LLM_API_BASE}"
+echo "[skillsentry] output_dir  = ${OUTPUT_DIR}"
+echo "[skillsentry] log_file    = ${LOG_FILE}"
 echo ""
 
 python3 "${SCRIPT_DIR}/main.py" \

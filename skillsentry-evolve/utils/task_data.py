@@ -1,4 +1,4 @@
-"""Task-level helpers: load rules, SKILL.md, traces from dataset_for_validation."""
+"""Task data loading: rules, SKILL.md, queries, and traces from the dataset."""
 from __future__ import annotations
 
 import json
@@ -9,7 +9,7 @@ import pathlib
 from typing import Any, Optional
 
 import config
-from tdrr.trace_parser import ParsedTrace, parse_trajectory, parse_skillsentry_log
+from utils.trace import ParsedTrace, parse_trajectory, parse_skillsentry_log
 
 
 def _extract_test_results(verifier_stdout: str) -> str:
@@ -198,175 +198,6 @@ def load_queries_for_skill(skill_name: str) -> list[str]:
     for task_name in task_names:
         queries.extend(load_queries(task_name))
     return queries
-
-
-def _extract_steps_from_skill_md(skill_md: str) -> list[dict]:
-    """Extract step structure from the frontmatter or body of SKILL.md."""
-    steps = []
-    lines = skill_md.split("\n")
-    prev_id = None
-    for line in lines:
-        # Match "Step N: label" or "## N. label" format
-        m = re.match(r'^(?:Step\s+\d+|##?\s+\d+)[:\.\s]+(.+)$', line.strip(), re.IGNORECASE)
-        if m:
-            label = m.group(1).strip()
-            # Generate snake_case id
-            sid = re.sub(r'[^a-z0-9]+', '_', label.lower()).strip('_')[:30]
-            step = {
-                "stepId": sid,
-                "description": label,
-                "depends_on": [prev_id] if prev_id else [],
-                "constraints": [],
-            }
-            steps.append(step)
-            prev_id = sid
-    return steps
-
-
-
-def _must_call_to_logical_actions(must_call: list[dict]) -> list[dict]:
-    """Convert a flat must_call list to the nested logical_actions structure.
-    Patterns from the same tool are merged into the same action.
-    """
-    action_map: dict[str, list] = {}
-    for sig in must_call:
-        tool = sig.get("tool", "Bash")
-        action_map.setdefault(tool, []).append(sig)
-    actions = []
-    for action_id, (tool, patterns) in enumerate(action_map.items(), start=1):
-        actions.append({"actionId": action_id, "patterns": patterns})
-    return actions
-
-
-def generate_initial_rules(
-    task_name: str,
-    skill_name: str,
-    skill_md: str,
-    candidates: dict,  # from pattern_mining.derive_candidates()
-) -> dict:
-    """
-    Generate initial rules.json from scratch using SKILL.md + trace patterns.
-    Called during bootstrap when no existing rules are available or when
-    we want to generate rules purely from traces (not load hand-crafted ones).
-
-    Step structure comes from SKILL.md.
-    must_call regex comes from success trace tokens (candidates).
-    forbidden rules come from failure trace tokens (candidates).
-    """
-    import utils.llm as llm
-
-    skill_md_excerpt = skill_md[:3000] if skill_md else "(not available)"
-
-    # Flatten candidates, remove the _global level, and give LLM a direct pattern+example list
-    mc_all = []
-    for step_cands in candidates.get("must_call_candidates", {}).values():
-        mc_all.extend(step_cands)
-    # Deduplicate, sort by count descending, take top 30
-    seen = set()
-    mc_dedup = []
-    for c in sorted(mc_all, key=lambda x: x.get("count", 0), reverse=True):
-        if c["pattern"] not in seen:
-            seen.add(c["pattern"])
-            mc_dedup.append(c)
-    mc_dedup = mc_dedup[:30]
-
-    fb_all = []
-    for step_cands in candidates.get("forbidden_candidates", {}).values():
-        fb_all.extend(step_cands)
-    fb_dedup = sorted(fb_all, key=lambda x: x.get("fail_count", 0), reverse=True)[:20]
-
-    try:
-        sp_text = llm.sp_with_dsl("bootstrap_rules_gen_sp")
-        up = llm.up("bootstrap_rules_gen_up",
-            task_name=task_name,
-            skill_name=skill_name,
-            skill_md=skill_md_excerpt,
-            must_call_candidates=json.dumps(mc_dedup, indent=2, ensure_ascii=False)[:2000],
-            forbidden_candidates=json.dumps(fb_dedup, indent=2, ensure_ascii=False)[:2000],
-            memory_summary=str(candidates.get("memory_summary", "(none)"))[:500],
-        )
-        import utils.llm as llm_mod
-        raw = llm_mod.call(
-            [{"role": "system", "content": sp_text},
-             {"role": "user", "content": up}],
-            temperature=0.2,
-            json_mode=True,
-        )
-        raw_rules = json.loads(raw)
-        # Error tolerance: LLM sometimes uses old field names; auto-correct to new DSL
-        for step in raw_rules.get("steps", []):
-            if "name" in step and "stepId" not in step:
-                step["stepId"] = step.pop("name")
-            if "id" in step and "stepId" not in step:
-                step["stepId"] = step.pop("id")
-            if "label" in step and "description" not in step:
-                step["description"] = step.pop("label")
-            if "requires" in step and "depends_on" not in step:
-                step["depends_on"] = step.pop("requires")
-            if "must_call" in step and "logical_actions" not in step:
-                # Convert flat must_call list to nested logical_actions structure
-                step["logical_actions"] = _must_call_to_logical_actions(step.pop("must_call"))
-            if "forbidden" in step and "failure_patterns" not in step:
-                step["failure_patterns"] = step.pop("forbidden")
-            if "constraints" not in step:
-                step["constraints"] = []
-        # completion_assertion → termination
-        if "completion_assertion" in raw_rules and "termination" not in raw_rules:
-            sigs = raw_rules.pop("completion_assertion", {}).get("required_signatures", [])
-            raw_rules["termination"] = [s.replace(".must_call", "") for s in sigs]
-
-        # Fallback: extract step structure from SKILL.md if LLM generated too few steps
-        # (fewer than half the number of steps in SKILL.md), rebuild from SKILL.md
-        # structure and merge in LLM-generated must_call/forbidden/on_enter content
-        skill_steps = _extract_steps_from_skill_md(skill_md)
-        llm_steps = raw_rules.get("steps", [])
-        if skill_steps and len(llm_steps) < max(2, len(skill_steps) // 2):
-            # Merge LLM-generated content into SKILL.md structure
-            merged_steps = []
-            # Flatten LLM's logical_actions patterns and failure_patterns
-            all_llm_patterns = [
-                p
-                for s in llm_steps
-                for la in s.get("logical_actions", [])
-                for p in la.get("patterns", [])
-            ]
-            all_llm_forbidden = [fb for s in llm_steps for fb in s.get("failure_patterns", [])]
-
-            for i, sk_step in enumerate(skill_steps):
-                sid = sk_step["stepId"]
-                n = len(skill_steps)
-                chunk = len(all_llm_patterns) // n if n else 0
-                step_patterns = all_llm_patterns[i*chunk:(i+1)*chunk] if chunk else []
-                if not step_patterns:
-                    step_patterns = [{"tool": "Bash", "command_match": "python3"},
-                                     {"tool": "Write", "input_match": {"content": "unified_planning"}}]
-                merged_steps.append({
-                    "stepId": sid,
-                    "description": sk_step["description"],
-                    "depends_on": sk_step["depends_on"],
-                    "constraints": [],
-                    "logical_actions": [{"actionId": 1, "patterns": step_patterns}],
-                    "on_enter": {"suggestions": [], "warnings": []},
-                    "failure_patterns": [],
-                })
-            if all_llm_forbidden and merged_steps:
-                merged_steps[-1]["failure_patterns"] = all_llm_forbidden
-
-            raw_rules["steps"] = merged_steps
-            raw_rules["skill"] = skill_name
-            if not raw_rules.get("termination"):
-                raw_rules["termination"] = [s["stepId"] for s in merged_steps]
-
-        return raw_rules
-    except Exception as e:
-        import traceback, sys
-        print(f"  [warn] generate_initial_rules failed: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        return {}
-
-
-def get_workflow_steps(rules: dict[str, Any]) -> list[str]:
-    return [f"{s['stepId']}: {s.get('description', '')}" for s in rules.get("steps", [])]
 
 
 def extract_workflow_steps_from_summaries(traces: list) -> list[str]:

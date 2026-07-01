@@ -1,0 +1,25 @@
+Skill: {task_name}
+Round: {round_num}
+
+## Current runtime guidance (rules.json)
+
+{current_rules}
+
+## High-frequency action patterns (from successful traces)
+
+{high_freq_patterns}
+
+## This round's agent trajectories ({n_success} success, {n_fail} failure)
+
+Below are the complete agent trajectories — actual Bash commands, code written, stdout output,
+and SkillSentry decisions. Read the code carefully to find the exact differences between success
+and failure.
+
+=== Successful trajectories ===
+{success_summaries}
+
+=== Failed trajectories ===
+{fail_summaries}
+
+Diagnose each experience field (logical_actions / on_enter / failure_patterns) of each step as
+FP / FN / MC / OK. Quote actual code lines as evidence.

@@ -1,17 +1,14 @@
 """Workflow IR — load rules.json, resolve a skill name to its rules file.
 
-DSL v2 field mapping (new → internal):
+DSL field mapping (rules.json → internal), following the DSL in the paper (Fig. 4):
   stepId          → step.step_id
   description     → step.description
   depends_on      → step.depends_on
   constraints     → step.constraints   (list of ToolConstraint / ParameterConstraint)
-  logical_actions → step.logical_actions  (list of LogicalAction with patterns)
+  logical_actions → step.logical_actions  (list of LogicalAction with action patterns)
   failure_patterns→ step.failure_patterns (list of Signature with reason)
   on_enter        → step.on_enter     ({suggestions: [...], warnings: [...]})
   termination     → ir.termination    (list of stepId strings)
-
-Legacy v1 fields (id/label/requires/must_call/forbidden/completion_assertion) are
-automatically converted on load so old rules.json files keep working.
 """
 from __future__ import annotations
 
@@ -121,8 +118,8 @@ class Step:
     # -- convenience properties for FSM / layers that still need flat lists --
 
     @property
-    def must_call(self) -> List[Signature]:
-        """Flat list of all patterns across all logical_actions."""
+    def action_patterns(self) -> List[Signature]:
+        """Flat list of all action patterns across this step's logical_actions."""
         out: List[Signature] = []
         for la in self.logical_actions:
             out.extend(la.patterns)
@@ -147,24 +144,12 @@ class Step:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Step":
-        # Support both new DSL (stepId) and legacy (id)
-        step_id = d.get("stepId") or d.get("id", "")
-        description = d.get("description") or d.get("label", "")
-        depends_on = list(d.get("depends_on") or d.get("requires") or [])
+        step_id = d.get("stepId", "")
+        description = d.get("description", "")
+        depends_on = list(d.get("depends_on") or [])
         constraints = [Constraint.from_dict(c) for c in (d.get("constraints") or [])]
-
-        # logical_actions (new DSL) or must_call (legacy)
-        if "logical_actions" in d:
-            logical_actions = [LogicalAction.from_dict(la) for la in d["logical_actions"]]
-        else:
-            # Convert flat must_call list → single LogicalAction
-            mc = [Signature.from_dict(x) for x in (d.get("must_call") or [])]
-            logical_actions = [LogicalAction(action_id=1, patterns=mc)] if mc else []
-
-        # failure_patterns (new DSL) or forbidden (legacy)
-        fp_raw = d.get("failure_patterns") or d.get("forbidden") or []
-        failure_patterns = [Signature.from_dict(x) for x in fp_raw]
-
+        logical_actions = [LogicalAction.from_dict(la) for la in (d.get("logical_actions") or [])]
+        failure_patterns = [Signature.from_dict(x) for x in (d.get("failure_patterns") or [])]
         on_enter = d.get("on_enter")
 
         return cls(
@@ -203,35 +188,22 @@ class GlobalRules:
 
 @dataclass
 class CompletionAssertion:
-    """Unified completion check.
+    """Completion check derived from the DSL `termination` field.
 
-    New DSL: termination = ["stepId1", "stepId2", ...]
-    Legacy:  completion_assertion.required_signatures = ["stepId.must_call", ...]
-    Both are normalised here into required_step_ids.
+    A step is "completed" once all of its logical_actions have been matched
+    (paper §III-D); `termination` lists the stepIds that must be completed
+    before the final output is accepted. The completion signature for a step
+    is '<stepId>.completed'.
     """
     required_step_ids: List[str] = field(default_factory=list)
-    required_artifacts: List[Signature] = field(default_factory=list)
 
-    # kept for backward compat with layers code that reads .required_signatures
     @property
     def required_signatures(self) -> List[str]:
-        return [f"{sid}.must_call" for sid in self.required_step_ids]
+        return [f"{sid}.completed" for sid in self.required_step_ids]
 
     @classmethod
     def from_termination(cls, termination: List[str]) -> "CompletionAssertion":
         return cls(required_step_ids=list(termination))
-
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "CompletionAssertion":
-        """Parse legacy completion_assertion dict."""
-        artifacts = [Signature.from_dict(x) for x in d.get("required_artifacts", [])]
-        step_ids: List[str] = []
-        for ref in d.get("required_signatures", []):
-            if isinstance(ref, str) and "." in ref:
-                step_ids.append(ref.split(".", 1)[0])
-            elif isinstance(ref, str):
-                step_ids.append(ref)
-        return cls(required_step_ids=step_ids, required_artifacts=artifacts)
 
 
 # ---------------------------------------------------------------------------
@@ -250,13 +222,10 @@ class IR:
     def from_dict(cls, d: Dict[str, Any]) -> "IR":
         steps = [Step.from_dict(s) for s in d.get("steps", [])]
 
-        # termination (new DSL) or completion_assertion (legacy)
         if "termination" in d:
             completion = CompletionAssertion.from_termination(d["termination"])
-        elif "completion_assertion" in d:
-            completion = CompletionAssertion.from_dict(d["completion_assertion"] or {})
         else:
-            # Default: all steps must be satisfied
+            # Default: every step must be completed.
             completion = CompletionAssertion.from_termination([s.step_id for s in steps])
 
         return cls(
@@ -280,17 +249,12 @@ class IR:
 
 VALID_SIGNATURE_KEYS = {"tool", "command_match", "path_match", "input_match", "reason"}
 VALID_STEP_KEYS = {
-    # new DSL
     "stepId", "description", "depends_on", "constraints",
     "logical_actions", "failure_patterns", "on_enter",
-    # legacy (still accepted)
-    "id", "label", "requires", "must_call", "forbidden",
 }
 VALID_GLOBAL_KEYS = {"forbidden_tools", "forbidden_bash", "forbidden_paths"}
 VALID_TOP_KEYS = {
-    "skill", "version", "steps", "global",
-    "termination",           # new DSL
-    "completion_assertion",  # legacy
+    "skill", "version", "steps", "global", "termination",
 }
 
 
@@ -319,9 +283,9 @@ def validate_ir(d: Dict[str, Any]) -> List[str]:
         if unknown:
             warnings.append(f"steps[{i}]: unknown keys {sorted(unknown)}")
 
-        sid = step.get("stepId") or step.get("id")
+        sid = step.get("stepId")
         if not sid:
-            warnings.append(f"steps[{i}]: missing 'stepId' (or legacy 'id')")
+            warnings.append(f"steps[{i}]: missing 'stepId'")
             continue
         if sid in seen_ids:
             warnings.append(f"steps[{i}]: duplicate stepId '{sid}'")
@@ -337,34 +301,28 @@ def validate_ir(d: Dict[str, Any]) -> List[str]:
                 if u:
                     warnings.append(f"steps[{i}].logical_actions[{j}].patterns[{k}]: unknown keys {sorted(u)}")
 
-        # Validate failure_patterns (or legacy forbidden)
-        for slot in ("failure_patterns", "forbidden", "must_call"):
-            for j, sig in enumerate(step.get(slot) or []):
-                if not isinstance(sig, dict):
-                    warnings.append(f"steps[{i}].{slot}[{j}]: not a JSON object")
-                    continue
-                u = set(sig.keys()) - VALID_SIGNATURE_KEYS
-                if u:
-                    warnings.append(f"steps[{i}].{slot}[{j}]: unknown signature keys {sorted(u)}")
+        # Validate failure_patterns signatures
+        for j, sig in enumerate(step.get("failure_patterns") or []):
+            if not isinstance(sig, dict):
+                warnings.append(f"steps[{i}].failure_patterns[{j}]: not a JSON object")
+                continue
+            u = set(sig.keys()) - VALID_SIGNATURE_KEYS
+            if u:
+                warnings.append(f"steps[{i}].failure_patterns[{j}]: unknown signature keys {sorted(u)}")
 
-    # Validate depends_on / requires references
+    # Validate depends_on references
     for i, step in enumerate(d.get("steps") or []):
         if not isinstance(step, dict):
             continue
-        deps = step.get("depends_on") or step.get("requires") or []
+        deps = step.get("depends_on") or []
         for j, r in enumerate(deps):
             if r not in seen_ids:
                 warnings.append(f"steps[{i}].depends_on[{j}]: references unknown stepId '{r}'")
 
-    # Validate termination / completion_assertion references
+    # Validate termination references
     for ref in d.get("termination") or []:
         if ref not in seen_ids:
             warnings.append(f"termination: references unknown stepId '{ref}'")
-    for ref in (d.get("completion_assertion") or {}).get("required_signatures") or []:
-        if isinstance(ref, str) and "." in ref:
-            sid = ref.split(".", 1)[0]
-            if sid not in seen_ids:
-                warnings.append(f"completion_assertion.required_signatures: unknown step '{sid}'")
 
     return warnings
 

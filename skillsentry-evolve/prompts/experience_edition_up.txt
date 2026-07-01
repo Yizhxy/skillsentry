@@ -1,0 +1,30 @@
+Skill: {skill_name}
+Round: {round_num}
+
+## Current runtime guidance (rules.json)
+
+{current_rules}
+
+## Logical-action candidates (from successful traces)
+
+{logical_action_candidates}
+
+## Failure-pattern candidates (from failed traces)
+
+{forbidden_candidates}
+
+## Field diagnoses
+
+{diagnosis}
+
+## Healthy fields (diagnosed OK — DO NOT touch)
+
+{healthy_fields}
+
+## Guidance-validation errors from the previous attempt (fix these; "none" on the first attempt)
+
+{validation_errors}
+
+Based on the diagnoses, produce edits (ADD / UPDATE / REMOVE) to logical_actions, on_enter, and
+failure_patterns. Derive every regex from the actual code quoted in the diagnosis evidence, and
+cite the specific trace in each rationale.

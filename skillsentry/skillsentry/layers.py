@@ -1,4 +1,4 @@
-"""L1 deny-list, L4 stop-gate, and the three-tier feedback assembler."""
+"""L1 deny-list, L3 stop-gate, and the feedback assembler."""
 from __future__ import annotations
 
 import json
@@ -66,7 +66,7 @@ def _suggest_alternatives(step: "Step") -> str:
     """Render the step's logical_actions patterns as a hint string so a denied
     agent has a concrete next move.
     """
-    patterns = step.must_call  # flat list via property
+    patterns = step.action_patterns  # flat list via property
     if not patterns:
         return ""
     parts = [_render_signature_hint(sig) for sig in patterns[:3]]
@@ -79,9 +79,9 @@ def suggest_for_missing_requires(
     """Render the logical_actions patterns of the FIRST missing prerequisite step."""
     for sid in missing_step_ids:
         step = ir.step_by_id(sid)
-        if not step or not step.must_call:
+        if not step or not step.action_patterns:
             continue
-        parts = [_render_signature_hint(sig) for sig in step.must_call[:3]]
+        parts = [_render_signature_hint(sig) for sig in step.action_patterns[:3]]
         return (f"First satisfy step '{sid}' — call: " + "; or ".join(parts))
     return ""
 
@@ -131,8 +131,8 @@ def format_on_enter_hints(step: "Step") -> str:
 def evaluate_l1(ir: IR, tool_name: str, tool_input: Dict[str, Any]) -> Optional[Decision]:
     """Return a hard-deny Decision if any L1 rule fires; else None.
 
-    For step-scoped forbidden hits we surface the same step's must_call as a
-    suggested alternative in the reason text — this turns a "stop" signal
+    For step-scoped forbidden hits we surface the same step's action patterns as
+    a suggested alternative in the reason text — this turns a "stop" signal
     into a "switch lane" signal (Finding 2 from experiment analysis cycle 0).
     """
     g = ir.global_rules
@@ -188,68 +188,7 @@ def evaluate_l1(ir: IR, tool_name: str, tool_input: Dict[str, Any]) -> Optional[
 
 
 # --------------------------------------------------------------------------
-# L2.5: stale-budget detector (v3)
-# --------------------------------------------------------------------------
-
-def next_unsatisfied_steps(ir: IR, satisfied: List[str]) -> List[str]:
-    """Return the first 1-2 step ids that are NOT satisfied yet AND whose
-    depends_on are already satisfied (i.e., immediately actionable steps).
-    """
-    sat = set(satisfied or [])
-    actionable: List[str] = []
-    unsat_all: List[str] = []
-    for s in ir.steps:
-        if s.step_id in sat:
-            continue
-        unsat_all.append(s.step_id)
-        if all(r in sat for r in s.depends_on):
-            actionable.append(s.step_id)
-    return (actionable or unsat_all)[:2]
-
-
-def evaluate_stale_budget(
-    ir: IR,
-    satisfied: List[str],
-    no_advance_streak: int,
-    threshold: int,
-) -> Optional[Decision]:
-    """v3 L2.5: emit a HINT when the agent has issued `threshold` consecutive
-    no-match tool calls while the workflow still has unsatisfied steps.
-
-    Captures Finding 7: L3 LLM-judge sloppily passes 'irrelevant but legal'
-    calls; this layer is deterministic, can't be evaded by prompt-injection,
-    and tells the agent exactly which step to advance next.
-    """
-    if no_advance_streak < threshold:
-        return None
-    if not ir.steps:
-        return None
-    next_steps = next_unsatisfied_steps(ir, satisfied)
-    if not next_steps:
-        return None  # everything satisfied → nothing to suggest
-
-    parts: List[str] = []
-    for sid in next_steps:
-        step = ir.step_by_id(sid)
-        if not step or not step.must_call:
-            parts.append(sid)
-            continue
-        sig_hints = [_render_signature_hint(sig) for sig in step.must_call[:2]]
-        parts.append(f"{sid} (try: {' / '.join(sig_hints)})")
-
-    reason = (
-        f"{no_advance_streak} consecutive tool calls did not advance the workflow; "
-        f"unsatisfied step(s) remain. Next step suggestion: " + " | ".join(parts)
-    )
-    return Decision(
-        kind=DECISION_HINT, layer="L2.5",
-        reason=reason,
-        matched_step=next_steps[0] if next_steps else None,
-    )
-
-
-# --------------------------------------------------------------------------
-# L4: stop-gate completion assertion
+# L3: stop-gate completion assertion
 # --------------------------------------------------------------------------
 
 def _iter_transcript_tool_uses(transcript_path: str):
@@ -276,45 +215,38 @@ def _iter_transcript_tool_uses(transcript_path: str):
                     yield block.get("name", ""), block.get("input") or {}
 
 
-def _signature_ref_to_sigs(ir: IR, ref: str) -> List[Signature]:
-    """Resolve a completion reference → list[Signature] from that step.
+def _step_completed_in_transcript(step: "Step", seen: List[Tuple[str, Dict[str, Any]]]) -> bool:
+    """True if EVERY logical action of the step has at least one alternative
+    pattern matched among the executed tool calls (M(s_i) = LA(s_i)).
 
-    Supports both:
-    - New DSL termination: plain stepId → returns step's logical_actions patterns
-    - Legacy: 'stepId.must_call' or 'stepId.forbidden' format
+    A step with no logical actions is trivially complete.
     """
-    if "." in ref:
-        step_id, slot = ref.split(".", 1)
-    else:
-        step_id, slot = ref, "must_call"
-
-    step = ir.step_by_id(step_id)
-    if not step:
-        return []
-    if slot == "must_call":
-        return list(step.must_call)   # flat patterns via property
-    if slot in ("forbidden", "failure_patterns"):
-        return list(step.failure_patterns)
-    return []
+    for la in step.logical_actions:
+        if not any(match_signature(sig, n, i) for sig in la.patterns for n, i in seen):
+            return False
+    return True
 
 
-def evaluate_l4(
+def evaluate_l3(
     ir: IR,
     transcript_path: Optional[str],
     observed_signatures: Optional[List[str]] = None,
     strict: bool = False,
 ) -> Optional[Decision]:
-    """Stop-gate: any required signature/artifact missing → hard-deny (block).
+    """Termination checker: any required step in `termination` not completed →
+    hard-deny (block).
 
-    Two coverage sources (Finding 3 from experiment analysis cycle 0):
-      - transcript scan (default): walks tool_use blocks; counts any executed
-        call that matches must_call signatures, including ones L2 soft-denied
-        but which `bypassPermissions` let through.
-      - strict mode (SKILLSENTRY_L4_STRICT=1): only counts signatures L2
-        actually advanced (= state.observed_signatures). Aligns L4 with L2's
-        FSM view, at the cost of missing tool_uses that bypassed the hook.
+    A step is completed only when ALL of its logical actions have been matched
+    (M(s_i) = LA(s_i)). Two coverage sources:
+      - transcript scan (default): a step is complete iff every one of its logical
+        actions has a pattern matched somewhere in the executed tool calls
+        (including ones L2 soft-denied but which `bypassPermissions` let through).
+      - strict mode (SKILLSENTRY_L3_STRICT=1): a step is complete iff L2 recorded
+        its '<stepId>.completed' signal (= state.observed_signatures). Aligns L3
+        with L2's FSM view, at the cost of missing tool_uses that bypassed the hook.
     """
-    if not ir.completion.required_signatures and not ir.completion.required_artifacts:
+    required = ir.completion.required_step_ids
+    if not required:
         return None
 
     observed_set = set(observed_signatures or [])
@@ -322,41 +254,23 @@ def evaluate_l4(
     if not strict and transcript_path:
         seen = list(_iter_transcript_tool_uses(transcript_path))
 
-    missing_sigs: List[str] = []
-    for ref in ir.completion.required_signatures:
+    missing: List[str] = []
+    for sid in required:
         if strict:
-            covered = ref in observed_set
+            covered = f"{sid}.completed" in observed_set
         else:
-            sigs = _signature_ref_to_sigs(ir, ref)
-            covered = bool(sigs) and any(
-                match_signature(sig, n, i) for sig in sigs for n, i in seen
-            )
+            step = ir.step_by_id(sid)
+            covered = bool(step) and _step_completed_in_transcript(step, seen)
         if not covered:
-            missing_sigs.append(ref)
+            missing.append(sid)
 
-    missing_arts: List[str] = []
-    for art in ir.completion.required_artifacts:
-        if strict:
-            # artifacts have no direct strict equivalent; trust transcript if available
-            covered = bool(transcript_path) and any(
-                match_signature(art, n, i)
-                for n, i in (list(_iter_transcript_tool_uses(transcript_path)) if not seen else seen)
-            )
-        else:
-            covered = any(match_signature(art, n, i) for n, i in seen)
-        if not covered:
-            missing_arts.append(signature_label(art))
-
-    if not missing_sigs and not missing_arts:
+    if not missing:
         return None
 
-    parts = []
-    if missing_sigs: parts.append(f"missing required steps: {missing_sigs}")
-    if missing_arts: parts.append(f"missing required artifacts: {missing_arts}")
-    layer = "L4-strict" if strict else "L4"
+    layer = "L3-strict" if strict else "L3"
     return Decision(
         kind=DECISION_HARD_DENY, layer=layer,
-        reason="completion-assertion failed — " + "; ".join(parts),
+        reason=f"completion check failed — missing required steps: {missing}",
     )
 
 
@@ -475,24 +389,4 @@ def render_stop_output(decision: Decision) -> Dict[str, Any]:
     return {
         "decision": "block",
         "reason": _format_reason(decision, for_stop=True),
-    }
-
-
-def ir_summary(ir: IR, satisfied: List[str]) -> Dict[str, Any]:
-    """Compact view of the IR for the L3 judge."""
-    sat = list(satisfied)
-    return {
-        "skill": ir.skill,
-        "steps": [
-            {
-                "id": s.step_id,
-                "description": s.description,
-                "depends_on": s.depends_on,
-                "satisfied": s.step_id in sat,
-            }
-            for s in ir.steps
-        ],
-        "satisfied_step_ids": sat,
-        "unsatisfied_step_ids": [s.step_id for s in ir.steps if s.step_id not in sat],
-        "next_actionable_step_ids": next_unsatisfied_steps(ir, sat),
     }

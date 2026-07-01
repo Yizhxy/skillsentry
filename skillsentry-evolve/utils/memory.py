@@ -128,7 +128,7 @@ def _match_tool_call_to_step(
     This is deterministic and does not depend on LLM step attribution.
     """
     for step in rules.get("steps", []):
-        step_id = step.get("stepId") or step.get("id")
+        step_id = step.get("stepId")
         for action in step.get("logical_actions", []):
             for sig in action.get("patterns", []):
                 if not isinstance(sig, dict):
@@ -165,7 +165,7 @@ def update(
     Update memory with a new batch of traces.
 
     Step attribution strategy (in priority order):
-    1. Regex reverse-match: match each tool call against step must_call regex (deterministic)
+    1. Regex reverse-match: match each tool call against step action-pattern regex (deterministic)
     2. structured_summary.steps_executed: LLM-attributed steps (fallback)
     3. Distribute all tokens to all steps (last resort, least accurate)
 
@@ -302,13 +302,13 @@ def update(
     return memory
 
 
-def get_must_call_candidates(
+def get_logical_action_candidates(
     memory: dict[str, Any],
     step_id: str,
     min_freq: int = 2,
 ) -> list[dict[str, Any]]:
     """
-    Return a list of must_call pattern candidates for a step, with actual code examples.
+    Return a list of logical-action pattern candidates for a step, with actual code examples.
     Includes patterns from the _global bucket (patterns not step-attributed during bootstrap).
     """
     success_patterns = memory.get("success_patterns", {})
@@ -379,7 +379,7 @@ def format_for_prompt(memory: dict[str, Any], step_ids: list[str]) -> str:
         "",
     ]
     for sid in step_ids:
-        must_cands = get_must_call_candidates(memory, sid, min_freq=1)
+        must_cands = get_logical_action_candidates(memory, sid, min_freq=1)
         forb_cands = get_forbidden_candidates(memory, sid, min_fail_count=1)
         if not must_cands and not forb_cands:
             continue

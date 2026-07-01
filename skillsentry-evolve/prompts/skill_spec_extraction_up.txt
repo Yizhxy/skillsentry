@@ -1,0 +1,17 @@
+Skill: {skill_name}
+
+## SKILL.md
+
+{skill_md}
+
+---
+
+## Structural validation errors from the previous attempt (fix these; "none" on the first attempt)
+
+{validation_errors}
+
+---
+
+Extract the skill specification (steps, depends_on, constraints, termination) as JSON,
+following the DSL. Do NOT emit logical_actions, failure_patterns, or on_enter.
+Output ONLY the JSON.

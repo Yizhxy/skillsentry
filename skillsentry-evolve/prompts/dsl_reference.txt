@@ -150,10 +150,9 @@ Injected as context to the agent when the FSM first enters this step.
 ### How the runtime uses these fields (FSM logic)
 
 1. **Before each agent action** — the hook checks:
-   - Does this action match any `failure_patterns`? → soft-deny + reason
+   - Does this action match any `failure_patterns`? → temporarily deny + reason; if the agent retries the same action, allow it (advisory)
    - Does this action match a `logical_actions` pattern? → credit the logical_action
    - Are the action's step's `depends_on` all satisfied? → if not, soft-deny with "complete step X first"
-   - Has the step's streak exceeded the stale-budget threshold? → hint about next step
 
 2. **When a step first becomes active** (its `depends_on` are all satisfied):
    - Inject `on_enter` suggestions + warnings + formatted `constraints` into agent context

@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-# LLM (for TDRR optimizer — runs outside container)
+# LLM (for the generation-side parser/miner — runs outside the container)
 LLM_API_BASE   = os.environ.get("LLM_API_BASE", os.environ.get("ANTHROPIC_BASE_URL", "YOUR_API_BASE_URL"))
 LLM_API_KEY    = os.environ.get("LLM_API_KEY", os.environ.get("ANTHROPIC_AUTH_TOKEN", os.environ.get("OPENAI_API_KEY", "")))
 LLM_MODEL      = os.environ.get("LLM_MODEL", "gpt-5.4")
@@ -20,7 +20,10 @@ HARBOR_MODEL   = os.environ.get("HARBOR_MODEL", "gpt-5.4")
 HARBOR_TIMEOUT = int(os.environ.get("HARBOR_TIMEOUT", "900"))
 
 # Paths
-_PROJECT = Path("/YOUR/PATH/TO/project")
+# Default to the repo root (two levels up from this file: skillsentry-evolve/config.py),
+# so the project runs out-of-the-box from any checkout. Override with SKILLSENTRY_PROJECT.
+_PROJECT = Path(os.environ.get("SKILLSENTRY_PROJECT",
+    str(Path(__file__).resolve().parent.parent)))
 
 DATASET_ROOT    = Path(os.environ.get("DATASET_ROOT",
     str(_PROJECT / "skillsentry_tasks" / "dataset_for_validation")))
@@ -40,7 +43,7 @@ PROMPTS_DIR     = Path(__file__).resolve().parent / "prompts"
 TASK_SKILL_MAP  = Path(os.environ.get("TASK_SKILL_MAP",
     str(_PROJECT / "skillsentry-evolve" / "task_skill_map.json")))
 
-# TDRR tuning
+# Mining tuning
 PATTERN_MIN_FREQ         = int(os.environ.get("PATTERN_MIN_FREQ", "2"))
 # Max tool calls to include per trace in LLM prompts (0 = no truncation)
 MAX_TOOL_CALLS_IN_PROMPT = int(os.environ.get("MAX_TOOL_CALLS_IN_PROMPT", "0"))

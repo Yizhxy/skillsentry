@@ -5,26 +5,27 @@ Wire-up in `.claude/settings.json`:
   "hooks": {
     "PostToolUse":  [{ "matcher": "Skill",
                        "hooks": [{ "type": "command",
-                         "command": "python3 /data/hxy/Skillfuzz/hooks/skillsentry_hook.py" }] }],
+                         "command": "python3 /path/to/skillsentry/hooks/skillsentry_hook.py" }] }],
     "PreToolUse":   [{ "hooks": [{ "type": "command",
-                         "command": "python3 /data/hxy/Skillfuzz/hooks/skillsentry_hook.py" }] }],
+                         "command": "python3 /path/to/skillsentry/hooks/skillsentry_hook.py" }] }],
     "Stop":         [{ "hooks": [{ "type": "command",
-                         "command": "python3 /data/hxy/Skillfuzz/hooks/skillsentry_hook.py" }] }],
+                         "command": "python3 /path/to/skillsentry/hooks/skillsentry_hook.py" }] }],
     "SubagentStop": [{ "hooks": [{ "type": "command",
-                         "command": "python3 /data/hxy/Skillfuzz/hooks/skillsentry_hook.py" }] }]
+                         "command": "python3 /path/to/skillsentry/hooks/skillsentry_hook.py" }] }]
   }
 
-Pipeline per PreToolUse:
-  L1 (deny-list)  → if hits, hard-deny.
-  L2 (FSM order)  → if pending matches a step's must_call but its requires
-                    are unsatisfied, soft-deny; otherwise mark step satisfied.
-  L3 (LLM judge)  → only when L1/L2 don't fire; honest 'maybe deviated' returns
-                    hint or soft-deny based on confidence.
-  Cooldown: same (tool, step, kind) repeated within window → downgrade by one
-            tier to avoid deny death-loops.
+Pipeline per PreToolUse (procedure checker):
+  L1 (failure patterns) → a call matching a step's failure_patterns is temporarily
+                          denied with the failure reason; if the agent retries the
+                          same action it is allowed (mined experience is advisory).
+                          Global safety deny-list hits stay denied.
+  L2 (FSM order)  → a call matching an activated step's action patterns advances the
+                    FSM (mark completed); if it matches a step whose depends_on are
+                    unsatisfied, soft-deny with a re-plan hint. Anything else is
+                    allowed as auxiliary exploration (no FSM advance).
 
 Pipeline on Stop / SubagentStop:
-  L4 (completion assertion) → block if any required signature/artifact missing.
+  L3 (termination checker) → block if any required step is not completed.
 """
 from __future__ import annotations
 
@@ -42,8 +43,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from skillsentry.ir import IR, find_rules_for_skill, load_rules_file, load_rules_file_validated  # noqa: E402
-from skillsentry.fsm import evaluate_l2, matched_steps  # noqa: E402
-from skillsentry.judge import call_judge, call_judge_voting  # noqa: E402
+from skillsentry.fsm import evaluate_l2, matched_logical_actions, recompute_completion  # noqa: E402
 from skillsentry.layers import (  # noqa: E402
     Decision,
     DECISION_ALLOW,
@@ -51,9 +51,8 @@ from skillsentry.layers import (  # noqa: E402
     DECISION_HINT,
     DECISION_SOFT_DENY,
     evaluate_l1,
-    evaluate_l4,
-    evaluate_stale_budget,
-    ir_summary,
+    evaluate_l3,
+    format_on_enter_hints,
     render_pretooluse_output,
     render_stop_output,
 )
@@ -61,30 +60,29 @@ from skillsentry.state import (  # noqa: E402
     add_observed_signature,
     bump_counter,
     bump_layer_kind,
-    bump_no_advance,
-    cooldown_downgrade,
-    judge_cache_get,
-    judge_cache_put,
+    cooldown_allow,
     load_state,
     mark_satisfied,
     record_decision,
-    reset_no_advance,
+    record_matched_action,
     save_state,
 )
 
 
+def _apply_completion(ir, state) -> set:
+    """Recompute which steps are completed (all logical actions matched) and
+    persist newly-completed steps as satisfied + '<step>.completed' signals.
+    Returns the set of newly-completed step ids."""
+    before = set(state.get("satisfied", []))
+    after = recompute_completion(ir, list(before), state.get("matched_actions", {}))
+    for sid in sorted(after - before):
+        mark_satisfied(state, sid)
+        add_observed_signature(state, f"{sid}.completed")
+    return after - before
+
+
 LOG_PATH = os.environ.get("SKILLSENTRY_LOG")
-TRACE_CHARS = int(os.environ.get("SKILLSENTRY_TRACE_CHARS", "20000"))
-JUDGE_TIMEOUT = float(os.environ.get("SKILLSENTRY_JUDGE_TIMEOUT", "30"))
-JUDGE_CONF_DENY = float(os.environ.get("SKILLSENTRY_JUDGE_CONF_DENY", "0.6"))
-JUDGE_VOTES = int(os.environ.get("SKILLSENTRY_JUDGE_VOTES", "1"))
-DISABLE_L3 = os.environ.get("SKILLSENTRY_DISABLE_L3", "1") == "1"
-DISABLE_L25 = os.environ.get("SKILLSENTRY_DISABLE_L25", "1") == "1"
 GUARD_MODE = os.environ.get("SKILLSENTRY_MODE", "strict")  # strict|soft|monitor|off
-# v3: stale-budget (L2.5) — fire a HINT after K consecutive no-advance calls.
-STALE_BUDGET_THRESHOLD = int(os.environ.get("SKILLSENTRY_STALE_BUDGET_K", "5"))
-# v3: L3 in-session verdict cache — skip duplicate LLM calls within a session.
-JUDGE_CACHE_ENABLED = os.environ.get("SKILLSENTRY_JUDGE_CACHE", "1") != "0"
 
 
 def log(record: Dict[str, Any]) -> None:
@@ -96,15 +94,6 @@ def log(record: Dict[str, Any]) -> None:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except OSError:
         pass
-
-
-def _read_transcript_tail(path: Optional[str], n: int) -> str:
-    if not path or not os.path.exists(path):
-        return ""
-    try:
-        return pathlib.Path(path).read_text(encoding="utf-8", errors="replace")[-n:]
-    except OSError:
-        return ""
 
 
 _RULES_VALIDATED_FOR_PATH: set = set()  # process-level "warned once" dedup
@@ -234,17 +223,6 @@ def _apply_mode(decision: Decision) -> Decision:
     return decision
 
 
-def _judge_cache_key(tool_name: str, tool_input: Any, satisfied: List[str]) -> str:
-    """Stable key for L3 verdict cache. Order satisfied list before hashing
-    so identical state under different insertion order shares the same key."""
-    import hashlib
-    payload = json.dumps(
-        {"t": tool_name, "i": tool_input, "s": sorted(satisfied or [])},
-        sort_keys=True, ensure_ascii=False, default=str,
-    )
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
-
-
 def _decide_pretooluse(
     data: Dict[str, Any], state: Dict[str, Any], ir: IR
 ) -> Decision:
@@ -256,118 +234,41 @@ def _decide_pretooluse(
     if l1:
         return l1
 
-    # L2
-    l2 = evaluate_l2(ir, state.get("satisfied", []), tool_name, tool_input)
+    # L2 — procedure checker (step ordering via FSM)
+    l2 = evaluate_l2(ir, state.get("satisfied", []), state.get("matched_actions", {}),
+                     tool_name, tool_input)
     if l2.kind == "order_violation":
+        # Matches a step whose depends_on are unsatisfied → temporarily deny and
+        # hint the missing steps, prompting the agent to re-plan.
         return Decision(
             kind=DECISION_SOFT_DENY, layer="L2", reason=l2.reason,
             matched_step=l2.matched_step,
         )
-    advanced_step: Optional[str] = None
-    if l2.kind == "allow_satisfies":
-        mark_satisfied(state, l2.matched_step)
-        add_observed_signature(state, f"{l2.matched_step}.must_call")
-        advanced_step = l2.matched_step
-        reset_no_advance(state)
-    else:
-        # No FSM advance — bump the streak counter so L2.5 (stale-budget)
-        # can fire after enough idle calls.
-        streak = bump_no_advance(state)
-        l25 = None if DISABLE_L25 else evaluate_stale_budget(
-            ir, state.get("satisfied", []), streak, STALE_BUDGET_THRESHOLD,
-        )
-        if l25:
-            bump_counter(state, "stale_budget_hints")
-            log({"event": "stale_budget_hint", "streak": streak,
-                 "next_step": l25.matched_step})
-            return l25
-
-    # L3
-    if DISABLE_L3:
+    if l2.kind == "allow_progress":
+        # Matches a not-yet-matched logical action of an activated step → allow
+        # and record the matched logical action. The step is marked completed
+        # only once ALL of its logical actions have been matched (M(s_i)=LA(s_i)).
+        first_entry = not state.get("matched_actions", {}).get(l2.matched_step)
+        record_matched_action(state, l2.matched_step, l2.matched_action_ids)
+        newly_completed = _apply_completion(ir, state)
+        # First entry into this step → inject its on_enter suggestions/warnings
+        # (and constraints) as guidance; the action is still allowed (paper §III-D).
+        if first_entry:
+            on_enter_hint = format_on_enter_hints(l2.step_obj) if l2.step_obj else ""
+            if on_enter_hint:
+                return Decision(
+                    kind=DECISION_HINT, layer="L2",
+                    reason=on_enter_hint, matched_step=l2.matched_step,
+                )
+        reason = (f"completed step {l2.matched_step}" if l2.matched_step in newly_completed
+                  else f"progressed step {l2.matched_step} (actions {l2.matched_action_ids})")
         return Decision(
-            kind=DECISION_ALLOW,
-            layer="L2" if advanced_step else "L0",
-            reason=f"advanced step {advanced_step}" if advanced_step else "",
-            matched_step=advanced_step,
+            kind=DECISION_ALLOW, layer="L2", reason=reason,
+            matched_step=l2.matched_step,
         )
 
-    workflow = state.get("workflow") or ""
-    pending = {"tool_name": tool_name, "tool_input": tool_input}
-    trace_tail = _read_transcript_tail(data.get("transcript_path"), TRACE_CHARS)
-    summary = ir_summary(ir, state.get("satisfied", []))
-
-    cache_key = _judge_cache_key(tool_name, tool_input, state.get("satisfied", []))
-    cached = judge_cache_get(state, cache_key) if JUDGE_CACHE_ENABLED else None
-    if cached is not None:
-        log({"event": "judge_cache_hit", "tool": tool_name, "key": cache_key[:12],
-             "verdict": {k: cached.get(k) for k in
-                         ("deviated", "confidence", "deviation_class", "_variance")}})
-        bump_counter(state, "judge_cache_hits")
-        verdict = cached
-    elif JUDGE_VOTES > 1:
-        bump_counter(state, "judge_cache_misses")
-        verdict, all_votes = call_judge_voting(
-            skill=ir.skill, workflow=workflow, trace_tail=trace_tail,
-            pending=pending, ir_summary=summary, timeout=JUDGE_TIMEOUT,
-            n_votes=JUDGE_VOTES,
-        )
-        log({"event": "judge_vote",
-             "votes_n": JUDGE_VOTES,
-             "variance": verdict.get("_variance"),
-             "deviated_count": sum(1 for v in all_votes if v.get("deviated") is True),
-             "individual": [
-                 {"deviated": v.get("deviated"),
-                  "confidence": v.get("confidence"),
-                  "deviation_class": v.get("deviation_class"),
-                  "_meta": v.get("_meta")}
-                 for v in all_votes
-             ]})
-        log({"event": "judge", "tool": tool_name, "verdict": {
-            k: verdict[k] for k in
-            ("deviated", "confidence", "deviation_class", "target_step",
-             "suggested_step", "reason", "_meta", "_variance")
-            if k in verdict
-        }})
-        if JUDGE_CACHE_ENABLED:
-            judge_cache_put(state, cache_key, verdict)
-    else:
-        bump_counter(state, "judge_cache_misses")
-        verdict = call_judge(
-            skill=ir.skill, workflow=workflow, trace_tail=trace_tail,
-            pending=pending, ir_summary=summary, timeout=JUDGE_TIMEOUT,
-        )
-        log({"event": "judge", "tool": tool_name, "verdict": verdict})
-        if JUDGE_CACHE_ENABLED and verdict.get("_meta") not in ("error", "skipped"):
-            judge_cache_put(state, cache_key, verdict)
-
-    if not verdict.get("deviated"):
-        return Decision(
-            kind=DECISION_ALLOW,
-            layer="L3" if not advanced_step else "L2+L3",
-            reason=verdict.get("reason", ""),
-            matched_step=advanced_step,
-        )
-
-    conf = float(verdict.get("confidence") or 0.0)
-    variance = int(verdict.get("_variance") or 1)
-    # v3 Finding 13: split vote (variance >= 2) means the judges disagree;
-    # force HINT regardless of mean confidence so the agent gets a cue but
-    # not a block. Unanimous (variance == 1) keeps the old confidence-gated
-    # SOFT-DENY / HINT split.
-    if variance >= 2:
-        kind = DECISION_HINT
-        bump_counter(state, "variance_downgrades")
-        log({"event": "variance_downgrade", "tool": tool_name,
-             "variance": variance, "confidence": conf})
-    elif conf >= JUDGE_CONF_DENY:
-        kind = DECISION_SOFT_DENY
-    else:
-        kind = DECISION_HINT
-    return Decision(
-        kind=kind, layer="L3",
-        reason=verdict.get("reason", "judge flagged deviation"),
-        matched_step=verdict.get("target_step") or None,
-    )
+    # allow_already_done / no_match → allow as auxiliary exploration, no FSM advance.
+    return Decision(kind=DECISION_ALLOW, layer="L0", reason="")
 
 
 def _handle_pretooluse(data: Dict[str, Any]) -> int:
@@ -382,24 +283,24 @@ def _handle_pretooluse(data: Dict[str, Any]) -> int:
 
     ir = _try_load_rules(state["skill"], cwd=data.get("cwd"))
     if not ir:
-        # Rules file not found — fall back to L3-only via legacy path.
+        # No runtime guidance for this skill → nothing to enforce against.
         log({"event": "no_rules", "skill": state["skill"]})
-        if DISABLE_L3:
-            return 0
-        decision = _decide_pretooluse_no_ir(data, state)
-    else:
-        decision = _decide_pretooluse(data, state, ir)
+        return 0
+    decision = _decide_pretooluse(data, state, ir)
 
     decision = _apply_mode(decision)
-    decision_kind = cooldown_downgrade(state, tool_name, decision.matched_step, decision.kind)
-    if decision_kind != decision.kind:
-        log({"event": "cooldown_downgrade", "from": decision.kind, "to": decision_kind,
+    # Record the flagged kind BEFORE relaxing, so a first-time failure-pattern
+    # deny is remembered and the same action can be allowed on retry.
+    flagged_kind = decision.kind
+    relaxed_kind = cooldown_allow(state, tool_name, decision.matched_step, decision.kind)
+    if relaxed_kind != decision.kind:
+        log({"event": "cooldown_allow", "from": decision.kind, "to": relaxed_kind,
              "tool": tool_name, "step": decision.matched_step})
-        decision = Decision(kind=decision_kind, layer=decision.layer,
-                            reason=decision.reason + " [cooldown-downgraded]",
+        decision = Decision(kind=relaxed_kind, layer=decision.layer,
+                            reason=decision.reason + " [allowed on retry]",
                             matched_step=decision.matched_step)
 
-    record_decision(state, tool_name, decision.matched_step, decision.kind)
+    record_decision(state, tool_name, decision.matched_step, flagged_kind)
     bump_layer_kind(state, decision.layer, decision.kind)
     save_state(session_id, state)
     log({"event": "pretool_decision", "tool": tool_name,
@@ -412,28 +313,8 @@ def _handle_pretooluse(data: Dict[str, Any]) -> int:
     return 0
 
 
-def _decide_pretooluse_no_ir(data: Dict[str, Any], state: Dict[str, Any]) -> Decision:
-    """Fallback to legacy L3-only behaviour when no rules.json is present."""
-    tool_name = data.get("tool_name", "")
-    tool_input = data.get("tool_input") or {}
-    workflow = state.get("workflow") or ""
-    pending = {"tool_name": tool_name, "tool_input": tool_input}
-    trace_tail = _read_transcript_tail(data.get("transcript_path"), TRACE_CHARS)
-    verdict = call_judge(
-        skill=state.get("skill") or "", workflow=workflow, trace_tail=trace_tail,
-        pending=pending, ir_summary={}, timeout=JUDGE_TIMEOUT,
-    )
-    log({"event": "judge_no_ir", "tool": tool_name, "verdict": verdict})
-    if not verdict.get("deviated"):
-        return Decision(kind=DECISION_ALLOW, layer="L3")
-    return Decision(
-        kind=DECISION_SOFT_DENY, layer="L3",
-        reason=verdict.get("reason", "workflow deviation"),
-    )
-
-
 STOP_BLOCK_CAP = int(os.environ.get("SKILLSENTRY_STOP_BLOCK_CAP", "2"))
-L4_STRICT = os.environ.get("SKILLSENTRY_L4_STRICT", "0") == "1"
+L3_STRICT = os.environ.get("SKILLSENTRY_L3_STRICT", "0") == "1"
 
 
 def _emit_session_summary(session_id: str, state: Dict[str, Any],
@@ -457,12 +338,7 @@ def _emit_session_summary(session_id: str, state: Dict[str, Any],
         "stop_block_count": int(state.get("stop_block_count", 0)),
         "decisions_by_layer": dict(counters.get("decisions_by_layer") or {}),
         "decisions_by_kind": dict(counters.get("decisions_by_kind") or {}),
-        "judge_cache_hits": int(counters.get("judge_cache_hits", 0)),
-        "judge_cache_misses": int(counters.get("judge_cache_misses", 0)),
-        "stale_budget_hints": int(counters.get("stale_budget_hints", 0)),
         "post_backfills": int(counters.get("post_backfills", 0)),
-        "no_advance_max": int(counters.get("no_advance_max", 0)),
-        "variance_downgrades": int(counters.get("variance_downgrades", 0)),
     })
 
 
@@ -477,10 +353,10 @@ def _handle_stop(data: Dict[str, Any]) -> int:
         # aggregation get a row even for skills without a rules.json.
         _emit_session_summary(session_id, state, "stop_pass_no_rules", None)
         return 0
-    decision = evaluate_l4(
+    decision = evaluate_l3(
         ir, data.get("transcript_path"),
         observed_signatures=state.get("observed_signatures", []),
-        strict=L4_STRICT,
+        strict=L3_STRICT,
     )
     if not decision:
         state["stop_block_count"] = 0
@@ -642,7 +518,7 @@ def main() -> int:
 
     if event == "PostToolUse":
         # v3: backfill L2 satisfied + observed_signatures from any successful
-        # non-Skill tool call. Closes the L2-state vs L4-transcript view gap
+        # non-Skill tool call. Closes the L2-state vs L3-transcript view gap
         # (Finding 3.3 / 11) when the call bypassed PreToolUse gating.
         return _handle_posttooluse_nonskill(data)
 
@@ -677,11 +553,11 @@ def main() -> int:
 
 
 def _handle_posttooluse_nonskill(data: Dict[str, Any]) -> int:
-    """Mark FSM steps as satisfied if a non-Skill tool actually executed
-    a step's must_call signature. Resolves the bypassPermissions case where
-    PreToolUse hook never advanced the FSM (e.g., due to soft-deny + bypass)
-    but the underlying call still ran — L4 transcript scan would credit it
-    but L2 state would not. v3."""
+    """Record matched logical actions if a non-Skill tool actually executed one
+    of a step's logical actions. Resolves the bypassPermissions case where the
+    PreToolUse hook never advanced the FSM (e.g., due to soft-deny + bypass) but
+    the underlying call still ran — L3 transcript scan would credit it but L2
+    state would not."""
     session_id = data.get("session_id") or "default"
     state = load_state(session_id)
     if not state.get("skill"):
@@ -695,27 +571,28 @@ def _handle_posttooluse_nonskill(data: Dict[str, Any]) -> int:
     if not tool_name:
         return 0
 
-    # Find matching steps (independent of requires — backfill is observational).
-    steps = matched_steps(ir, tool_name, tool_input)
-    if not steps:
-        return 0
-
     sat_set = set(state.get("satisfied", []))
-    advanced: List[str] = []
-    for step in steps:
+    matched = state.get("matched_actions", {})
+    progressed = False
+    for step in ir.steps:
         if step.id in sat_set:
             continue
-        # Only credit if requires already met — otherwise we'd retroactively
-        # legitimize an order violation.
-        if all(r in sat_set for r in step.requires):
-            mark_satisfied(state, step.id)
-            add_observed_signature(state, f"{step.id}.must_call")
-            sat_set.add(step.id)
-            advanced.append(step.id)
-    if advanced:
-        reset_no_advance(state)
-        bump_counter(state, "post_backfills", len(advanced))
-        log({"event": "post_backfill", "tool": tool_name, "advanced": advanced})
+        # Only credit an activated step (depends_on met) — otherwise we'd
+        # retroactively legitimize an order violation.
+        if not all(r in sat_set for r in step.depends_on):
+            continue
+        ids = matched_logical_actions(step, tool_name, tool_input)
+        new_ids = [i for i in ids if i not in matched.get(step.id, [])]
+        if new_ids:
+            record_matched_action(state, step.id, new_ids)
+            progressed = True
+
+    if progressed:
+        newly_completed = _apply_completion(ir, state)
+        bump_counter(state, "post_backfills", 1)
+        log({"event": "post_backfill", "tool": tool_name,
+             "matched_actions": state.get("matched_actions", {}),
+             "newly_completed": sorted(newly_completed)})
     save_state(session_id, state)
     return 0
 

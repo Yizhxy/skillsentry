@@ -89,7 +89,7 @@ class HookEvent:
     """A single skillsentry PreToolUse decision recorded in the trace."""
     tool: str
     decision: str        # allow / hint / soft-deny / hard-deny
-    layer: str           # L1 / L2 / L3 / L4
+    layer: str           # L1 / L2 / L3
     matched_step: Optional[str]
     reason: str
 
@@ -353,7 +353,7 @@ def _extract_hook_from_tool_result(item: dict) -> Optional[HookEvent]:
 
 
 def _extract_hook_from_text(text: str) -> Optional[HookEvent]:
-    keywords = ["skillsentry", "workflow", "deviat", "step requires", "must_call",
+    keywords = ["skillsentry", "workflow", "deviat", "step requires", "action pattern",
                 "forbidden", "order violation", "next_actionable"]
     if any(k in text.lower() for k in keywords):
         return HookEvent(tool="", decision="hint", layer="injected",
