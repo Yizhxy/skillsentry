@@ -1,0 +1,138 @@
+{
+  "skill": "spring-boot-migration",
+  "steps": [
+    {
+      "stepId": "analyze_project_structure",
+      "description": "Analyze current project structure — read pom.xml, identify dependencies and Java/Spring Boot versions",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "pom\\.xml$" },
+            { "tool": "Bash", "command_match": "cat.*pom\\.xml|mvn.*help|grep.*version.*pom" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Read pom.xml first to identify current Spring Boot version, Java version, and all dependencies.",
+          "Note all javax.* imports across Java source files — these will all need migration to jakarta.*."
+        ]
+      }
+    },
+    {
+      "stepId": "update_java_version",
+      "description": "Update Java version from 8 to 21 in pom.xml and verify compiler configuration",
+      "depends_on": ["analyze_project_structure"],
+      "constraints": [
+        { "parameter": "java.version", "requirement": "21" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Edit", "path_match": "pom\\.xml$" },
+            { "tool": "Write", "input_match": { "content": "java\\.version.*21|source.*21|target.*21|release.*21" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "upgrade_spring_boot_version",
+      "description": "Upgrade Spring Boot parent version from 2.7.x to 3.2.x in pom.xml",
+      "depends_on": ["update_java_version"],
+      "constraints": [
+        { "parameter": "spring-boot.version", "requirement": "3.2.x" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Edit", "path_match": "pom\\.xml$" },
+            { "tool": "Write", "input_match": { "content": "spring-boot.*3\\.2|3\\.2\\..*spring" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Change the spring-boot-starter-parent version to 3.2.x — this pulls in Jakarta EE 10 and Hibernate 6."
+        ]
+      }
+    },
+    {
+      "stepId": "migrate_javax_to_jakarta",
+      "description": "Migrate javax.* namespace to jakarta.* in all Java files",
+      "depends_on": ["upgrade_spring_boot_version"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "sed.*javax.*jakarta|find.*java.*javax|grep.*javax" },
+            { "tool": "Write", "input_match": { "content": "jakarta\\.persistence|jakarta\\.validation|jakarta\\.servlet" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Replace ALL javax.persistence.*, javax.validation.*, javax.servlet.* imports with jakarta.* equivalents.",
+          "A bulk sed replacement works well: sed -i 's/javax\\.persistence/jakarta.persistence/g' $(find . -name '*.java')"
+        ],
+        "warnings": [
+          "javax.sql.*, javax.crypto.* and other Java SE packages do NOT move to jakarta — only the EE namespaces migrate."
+        ]
+      },
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "import javax\\.persistence|import javax\\.validation|import javax\\.servlet" },
+          "reason": "⚠️ Spring Boot 3.x requires jakarta.* namespaces. Replace 'import javax.persistence' → 'import jakarta.persistence', 'import javax.validation' → 'import jakarta.validation', etc."
+        }
+      ]
+    },
+    {
+      "stepId": "update_spring_security",
+      "description": "Update Spring Security 6 — replace deprecated WebSecurityConfigurerAdapter with SecurityFilterChain",
+      "depends_on": ["migrate_javax_to_jakarta"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "SecurityFilterChain|@Bean.*SecurityFilterChain|HttpSecurity.*http" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "WebSecurityConfigurerAdapter" },
+          "reason": "❌ WebSecurityConfigurerAdapter was removed in Spring Security 6. Replace it with a @Bean returning SecurityFilterChain: @Bean public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception { ... }"
+        }
+      ]
+    },
+    {
+      "stepId": "compile_and_test",
+      "description": "Run mvn clean compile to verify compilation, then run mvn test to ensure all tests pass",
+      "depends_on": ["update_spring_security"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "mvn.*compile|mvn.*clean|mvn.*test|mvn.*package" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Run 'mvn clean compile' first to catch import errors before running the full test suite.",
+          "If compilation fails, check for remaining javax.* imports or API changes between versions."
+        ]
+      }
+    }
+  ],
+  "termination": ["migrate_javax_to_jakarta", "update_spring_security", "compile_and_test"]
+}

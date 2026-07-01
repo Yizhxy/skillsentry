@@ -1,0 +1,111 @@
+{
+  "skill": "glm-calibration",
+  "steps": [
+    {
+      "stepId": "read_config_and_data",
+      "description": "Read glm3.nml configuration and inspect observation data structure",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "glm3\\.nml" },
+            { "tool": "Bash", "command_match": "cat.*glm3\\.nml|read.*nml|open.*glm3" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Read glm3.nml first to extract lake_depth from the &init_profiles section — needed for depth conversion later."
+        ]
+      }
+    },
+    {
+      "stepId": "run_baseline_glm",
+      "description": "Run GLM with default parameters and verify output file is produced",
+      "depends_on": ["read_config_and_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "\\bglm\\b|glm3|run.*glm|glm.*run" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "process_output_and_calc_rmse",
+      "description": "Read output.nc, convert height-to-depth coordinates, merge with observations, compute RMSE",
+      "depends_on": ["run_baseline_glm"],
+      "constraints": [
+        { "parameter": "depth conversion", "requirement": "depth = lake_depth - z (NOT z directly)" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "output\\.nc|netCDF4|Dataset|rmse|RMSE|netcdf" },
+            { "tool": "Write", "input_match": { "content": "output\\.nc|netCDF4|Dataset|rmse|RMSE" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "depth\\s*=\\s*z\\b|depth_from_surface\\s*=\\s*z\\b" },
+          "reason": "❌ Error: GLM z is height from lake bottom, not depth from surface. Correct conversion: depth = lake_depth - z. Using z directly as depth gives inverted temperature profiles and incorrect RMSE."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "GLM z-coordinate is height from lake bottom, NOT depth from surface — convert with: depth = lake_depth - z.",
+          "Get lake_depth from the &init_profiles section of glm3.nml before processing output."
+        ],
+        "warnings": [
+          "Never use z directly as depth — this inverts the water column and produces wrong RMSE values."
+        ]
+      }
+    },
+    {
+      "stepId": "calibrate_parameters",
+      "description": "Adjust calibration parameters to minimize RMSE below 2.0°C",
+      "depends_on": ["process_output_and_calc_rmse"],
+      "constraints": [
+        { "parameter": "RMSE target", "requirement": "must be < 2.0°C" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "Kw|coef_mix_hyp|wind_factor|lw_factor|minimize|optimize|Nelder" },
+            { "tool": "Write", "input_match": { "content": "Kw|coef_mix_hyp|wind_factor|lw_factor|minimize|Nelder|optimize" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use scipy.optimize.minimize (method='Nelder-Mead') with all 5 parameters: Kw, coef_mix_hyp, wind_factor, lw_factor, ch.",
+          "Keep parameters within physical ranges: Kw 0.1-0.5, coef_mix_hyp 0.3-0.7, wind_factor/lw_factor 0.7-1.3."
+        ]
+      }
+    },
+    {
+      "stepId": "save_final_params",
+      "description": "Save calibrated parameters back to glm3.nml and confirm RMSE < 2.0°C",
+      "depends_on": ["calibrate_parameters"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "glm3\\.nml|modify_nml|write.*nml" },
+            { "tool": "Write", "input_match": { "content": "glm3\\.nml|modify_nml|nml" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["run_baseline_glm", "process_output_and_calc_rmse", "calibrate_parameters", "save_final_params"]
+}

@@ -1,0 +1,113 @@
+{
+  "skill": "mesh-analysis",
+  "steps": [
+    {
+      "stepId": "parse_binary_stl",
+      "description": "Parse binary STL file — read header, triangles, and extract Material ID from Attribute Byte Count",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "open.*stl|read.*stl|struct\\.unpack|stl.*binary" },
+            { "tool": "Write", "input_match": { "content": "struct\\.unpack|stl|header|num_triangles|Attribute" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Binary STL format: 80-byte header, 4-byte triangle count, then per-triangle: 12-byte normal + 3×12-byte vertices + 2-byte attribute.",
+          "Extract Material ID from the 2-byte Attribute Byte Count field of each triangle."
+        ],
+        "warnings": [
+          "Do not use numpy-stl or mesh library for reading — they may discard the Attribute Byte Count field that stores the Material ID."
+        ]
+      }
+    },
+    {
+      "stepId": "build_connectivity_graph",
+      "description": "Build connectivity graph — identify connected components by triangle adjacency (shared edges)",
+      "depends_on": ["parse_binary_stl"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "adjacency|connected.*component|union.*find|DisjointSet|shared.*edge|edge.*shared" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "filter_largest_component",
+      "description": "Filter the largest connected component — remove scanning debris (small spurious triangles)",
+      "depends_on": ["build_connectivity_graph"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "largest.*component|max.*component|filter.*debris|main.*body" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Select the component with the most triangles as the main scan body; discard all others as scanning artifacts."
+        ]
+      }
+    },
+    {
+      "stepId": "calculate_volume",
+      "description": "Calculate volume by summing signed volumes of all triangles using the divergence theorem",
+      "depends_on": ["filter_largest_component"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "signed.*volume|divergence|cross.*product|dot.*product|volume.*=.*sum|triangle.*volume" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Signed volume of a triangle: V_i = (v1 · (v2 × v3)) / 6. Sum over all triangles and take absolute value.",
+          "The divergence theorem approach works for watertight meshes."
+        ]
+      }
+    },
+    {
+      "stepId": "lookup_material_density",
+      "description": "Look up density from material_density_table.md by matching the extracted Material ID",
+      "depends_on": ["calculate_volume"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "material_density_table\\.md$|density.*table" },
+            { "tool": "Write", "input_match": { "content": "material_density_table|density.*lookup|material.*id.*density" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "compute_mass_and_output",
+      "description": "Compute mass = volume × density and save results to mass_report.json",
+      "depends_on": ["lookup_material_density"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "mass.*=.*volume|mass.*density|json\\.dump.*mass" },
+            { "tool": "Write", "input_match": { "content": "mass.*=.*volume|mass.*density|mass_report\\.json|json\\.dump" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["calculate_volume", "lookup_material_density", "compute_mass_and_output"]
+}

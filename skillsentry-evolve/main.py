@@ -162,11 +162,11 @@ def self_evolving_stage(task_name: str, num_rounds: int, queries_per_round: int,
     st = state_io.load(out_dir)
     start_round = max(st.get("round", 1), 1)
 
-    all_queries = load_queries(task_name)
+    all_queries = load_queries(task_name, split="evolve")  # Q_evol only
     if not all_queries:
-        print("  [error] No queries found")
+        print("  [error] No Q_evol queries found — run utils/prepare_data.py first")
         return
-    print(f"  Available queries: {len(all_queries)}")
+    print(f"  Q_evol queries: {len(all_queries)}")
 
     for round_num in range(start_round, start_round + num_rounds):
         print(f"\n--- Round {round_num} ---")

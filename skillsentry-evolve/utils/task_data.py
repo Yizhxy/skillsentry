@@ -107,21 +107,22 @@ def get_skill_name(task_name: str) -> str:
 
 
 def load_skill_md(task_name: str) -> str:
-    """Load SKILL.md for the canonical skill of a task."""
+    """Load SKILL.md for the canonical skill of a task.
+
+    Searches under TASKS_ROOT (data/raw/skillsentry_tasks) for a task instance
+    directory containing an environment/skills/<skill_name>/SKILL.md.
+    """
     skill_name = get_skill_name(task_name)
-    # Try canonical skill dir first
-    for root in [config.TASKS_ROOT, config.TASKS_ROOT.parent / "skillsentry" / "tasks"]:
-        skill_md_path = root / task_name / "environment" / "skills" / skill_name / "SKILL.md"
-        if skill_md_path.exists():
+    skill_task_dir = config.TASKS_ROOT / task_name
+    if skill_task_dir.exists():
+        # Look inside task instances for the environment/skills dir
+        for instance_dir in sorted(skill_task_dir.iterdir()):
+            skill_md_path = instance_dir / "environment" / "skills" / skill_name / "SKILL.md"
+            if skill_md_path.exists():
+                return skill_md_path.read_text(encoding="utf-8", errors="replace")
+        # Fallback: any SKILL.md inside the task dir
+        for skill_md_path in sorted(skill_task_dir.rglob("SKILL.md")):
             return skill_md_path.read_text(encoding="utf-8", errors="replace")
-    # Fallback: first SKILL.md found
-    for root in [config.TASKS_ROOT, config.TASKS_ROOT.parent / "skillsentry" / "tasks"]:
-        skills_dir = root / task_name / "environment" / "skills"
-        if skills_dir.exists():
-            for skill_subdir in sorted(skills_dir.iterdir()):
-                skill_md_path = skill_subdir / "SKILL.md"
-                if skill_md_path.exists():
-                    return skill_md_path.read_text(encoding="utf-8", errors="replace")
     return ""
 
 
@@ -216,59 +217,94 @@ def extract_workflow_steps_from_summaries(traces: list) -> list[str]:
     return [f"{sid}: " for sid in sorted(seen, key=lambda s: seen[s])]
 
 
-def load_queries(task_name: str) -> list[str]:
-    queries = []
-    task_dir = config.DATASET_ROOT / task_name
-    for iter_path in sorted(task_dir.glob("iter_*")):
-        q = iter_path / "query.md"
-        if q.exists():
-            queries.append(q.read_text(encoding="utf-8"))
+def load_queries(task_name: str, split: str = "evolve") -> list[str]:
+    """Load queries for a task from data/evolve/<task>/<split>/.
+
+    Each task instance directory contains:
+      - instruction.md       — original query
+      - index_0/ … index_N/  — paraphrase variants (each with instruction.md)
+
+    Args:
+        task_name: e.g. "econ-detrending-correlation"
+        split: "evolve" (Q_evol) | "test" (Q_test) | "baseline"
+    """
+    queries: list[str] = []
+    task_split_dir = config.EVOLVE_ROOT / task_name / split
+    if not task_split_dir.exists():
+        return queries
+
+    for instance_dir in sorted(task_split_dir.iterdir()):
+        if not instance_dir.is_dir():
+            continue
+        # Original query
+        orig = instance_dir / "instruction.md"
+        if orig.exists():
+            queries.append(orig.read_text(encoding="utf-8"))
+        # Paraphrase variants
+        for idx_dir in sorted(instance_dir.iterdir()):
+            if idx_dir.is_dir() and idx_dir.name.startswith("index_"):
+                q = idx_dir / "instruction.md"
+                if q.exists():
+                    queries.append(q.read_text(encoding="utf-8"))
     return queries
 
 
 def load_baseline_traces(task_name: str) -> list[TraceData]:
-    """Load all baseline traces from dataset_for_validation."""
+    """Load baseline traces from data/evolve/<task>/baseline/.
+
+    Baseline traces are pre-collected agent runs stored as artifacts.json
+    (containing trajectory, reward, verifier_stdout) under each task instance.
+    These are used during the Initialization Stage (§III-B) to mine initial
+    execution experience before any self-evolving rounds.
+    """
     traces = []
-    task_dir = config.DATASET_ROOT / task_name
-    if not task_dir.exists():
+    baseline_dir = config.EVOLVE_ROOT / task_name / "baseline"
+    if not baseline_dir.exists():
         return traces
 
-    for iter_path in sorted(task_dir.glob("iter_*")):
-        artifacts_file = iter_path / "artifacts.json"
-        if not artifacts_file.exists():
+    for instance_dir in sorted(baseline_dir.iterdir()):
+        if not instance_dir.is_dir():
             continue
-        try:
-            artifacts = json.loads(artifacts_file.read_text(encoding="utf-8"))
-            reward = float(artifacts.get("reward", 0.0))
-            traj_raw = artifacts.get("trajectory", "")
-            parsed = parse_trajectory(traj_raw)
+        # Collect all query variants (original + paraphrases) within the instance
+        query_dirs = [instance_dir] + sorted(
+            [d for d in instance_dir.iterdir() if d.is_dir() and d.name.startswith("index_")]
+        )
+        for qdir in query_dirs:
+            artifacts_file = qdir / "artifacts.json"
+            if not artifacts_file.exists():
+                continue
+            try:
+                artifacts = json.loads(artifacts_file.read_text(encoding="utf-8"))
+                reward = float(artifacts.get("reward", 0.0))
+                traj_raw = artifacts.get("trajectory", "")
+                parsed = parse_trajectory(traj_raw)
 
-            # verifier_stdout: direct test failure evidence (Stage 1 only, NOT Stage 3)
-            verifier_stdout = artifacts.get("verifier_stdout", "")
-            if verifier_stdout:
-                extracted = _extract_test_results(verifier_stdout)
-                extracted = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', extracted)
-                parsed.verifier_stdout = extracted
+                verifier_stdout = artifacts.get("verifier_stdout", "")
+                if verifier_stdout:
+                    extracted = _extract_test_results(verifier_stdout)
+                    extracted = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', extracted)
+                    parsed.verifier_stdout = extracted
 
-            eval_result = {}
-            ef = iter_path / "eval.json"
-            if ef.exists():
-                eval_result = json.loads(ef.read_text(encoding="utf-8"))
+                eval_result = {}
+                ef = qdir / "eval.json"
+                if ef.exists():
+                    eval_result = json.loads(ef.read_text(encoding="utf-8"))
 
-            query = ""
-            qf = iter_path / "query.md"
-            if qf.exists():
-                query = qf.read_text(encoding="utf-8")
+                query = ""
+                qf = qdir / "instruction.md"
+                if qf.exists():
+                    query = qf.read_text(encoding="utf-8")
 
-            traces.append(TraceData(
-                source=iter_path.name,
-                reward=reward,
-                query=query,
-                parsed=parsed,
-                eval_result=eval_result,
-            ))
-        except Exception as e:
-            print(f"  [warn] Failed to load {iter_path.name}: {e}")
+                source = f"{instance_dir.name}/{qdir.name}" if qdir != instance_dir else instance_dir.name
+                traces.append(TraceData(
+                    source=source,
+                    reward=reward,
+                    query=query,
+                    parsed=parsed,
+                    eval_result=eval_result,
+                ))
+            except Exception as e:
+                print(f"  [warn] Failed to load {qdir}: {e}")
     return traces
 
 

@@ -1,0 +1,126 @@
+{
+  "skill": "jackson-security",
+  "steps": [
+    {
+      "stepId": "locate_entry_point",
+      "description": "Analyze the vulnerability and locate the Jackson deserialization entry point in the source code",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "grep.*readValue|grep.*deserializ|find.*java|cat.*\\.java" },
+            { "tool": "Read", "path_match": "\\.java$" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Search for Jackson's readValue() calls — that is where deserialization happens and where the attack surface is.",
+          "Also look for @JsonTypeInfo annotations and ObjectMapper configurations."
+        ]
+      }
+    },
+    {
+      "stepId": "understand_attack_surface",
+      "description": "Understand the empty key attack vector and why post-deserialization validation is insufficient",
+      "depends_on": ["locate_entry_point"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "empty.*key|\"\".*key|pre.*deserializ|readValue|sampler" },
+            { "tool": "Write", "input_match": { "content": "empty.*key|\"\"|pre.*deserializ|attack|malicious" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "The empty key ('') attack exploits special handling during Jackson parsing — it cannot be detected by examining the deserialized object.",
+          "The fix must be applied BEFORE readValue() is called — pre-deserialization validation on the raw JSON string."
+        ],
+        "warnings": [
+          "Post-deserialization validation (validating the resulting Java object) is INSUFFICIENT — the attack has already executed by the time your code examines the object."
+        ]
+      }
+    },
+    {
+      "stepId": "implement_pre_deserialization_validation",
+      "description": "Implement pre-deserialization validation to detect and reject malicious JSON patterns before readValue()",
+      "depends_on": ["understand_attack_surface"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "pre.*deserializ|validate.*json|check.*json|\"\".*:.*throw|empty.*key.*throw|reject.*malicious" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "obj\\.get.*==.*null|result\\.isEmpty|if.*field.*null" },
+          "reason": "⚠️ Validating the deserialized Java object AFTER readValue() cannot detect empty-key attacks — the attack already executed during deserialization. Implement validation on the RAW JSON string BEFORE readValue()."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Intercept the raw JSON string at the sampler entry point and check for empty keys before passing to readValue().",
+          "A simple approach: if rawJson.contains('\"\":') or rawJson.matches(.*\"\"\\s*:.*) → throw an exception."
+        ]
+      }
+    },
+    {
+      "stepId": "create_patch_files",
+      "description": "Create patch files (.patch) for the affected source files",
+      "depends_on": ["implement_pre_deserialization_validation"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "git.*diff|diff.*orig|patch|create.*patch" },
+            { "tool": "Write", "path_match": "\\.patch$" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "rebuild_project",
+      "description": "Apply patches and rebuild with Maven — verify compilation succeeds",
+      "depends_on": ["create_patch_files"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "mvn.*compile|mvn.*build|mvn.*package|git.*apply|patch.*-p" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Run 'mvn clean compile' to verify the patched code compiles without errors before testing."
+        ]
+      }
+    },
+    {
+      "stepId": "verify_fix",
+      "description": "Verify fix blocks the empty-key exploit while preserving legitimate deserialization functionality",
+      "depends_on": ["rebuild_project"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "mvn.*test|curl.*exploit|test.*empty.*key|verify.*fix" }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["implement_pre_deserialization_validation", "create_patch_files", "rebuild_project"]
+}

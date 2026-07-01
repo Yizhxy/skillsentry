@@ -4,8 +4,8 @@
   "tasks": [
     {
       "task_name": "econ-detrending-correlation",
-      "skill_name": "timeseries-detrending",
-      "skill_dir": "skillsentry_tasks/tasks/econ-detrending-correlation/environment/skills/timeseries-detrending",
+      "skill_name": "macroeconomic-timeseries-detrending",
+      "skill_dir": "skillsentry_tasks/tasks/econ-detrending-correlation/environment/skills/macroeconomic-timeseries-detrending",
       "steps": [
         "Step 1: Load and clean data — handle missing values, ensure proper time ordering",
         "Step 2: Convert to real terms — deflate nominal values using appropriate price index",
@@ -27,8 +27,8 @@
     },
     {
       "task_name": "manufacturing-fjsp-optimization",
-      "skill_name": "fjsp-baseline-repair-with-downtime-and-policy",
-      "skill_dir": "skillsentry_tasks/tasks/manufacturing-fjsp-optimization/environment/skills/fjsp-baseline-repair-with-downtime-and-policy",
+      "skill_name": "fjsp-repair-with-downtime-and-policy",
+      "skill_dir": "skillsentry_tasks/tasks/manufacturing-fjsp-optimization/environment/skills/fjsp-repair-with-downtime-and-policy",
       "steps": [
         "Step 1: Determine precedence-aware repair order: sort operations by (index, baseline start, base index)",
         "Step 2: For each operation, compute anchor = max(baseline start, end of previous op of same job)",
@@ -40,8 +40,8 @@
     },
     {
       "task_name": "powerlifting-coef-calc",
-      "skill_name": "xlsx",
-      "skill_dir": "skillsentry_tasks/tasks/powerlifting-coef-calc/environment/skills/xlsx",
+      "skill_name": "powerlifting-coef-calc",
+      "skill_dir": "skillsentry_tasks/tasks/powerlifting-coef-calc/environment/skills/powerlifting-coef-calc",
       "steps": [
         "Step 1: Choose tool (pandas for data, openpyxl for formulas/formatting)",
         "Step 2: Create/Load workbook or existing file",
@@ -65,8 +65,8 @@
     },
     {
       "task_name": "weighted-gdp-calc",
-      "skill_name": "xlsx",
-      "skill_dir": "skillsentry_tasks/tasks/weighted-gdp-calc/environment/skills/xlsx",
+      "skill_name": "weighted-gdp-calc",
+      "skill_dir": "skillsentry_tasks/tasks/weighted-gdp-calc/environment/skills/weighted-gdp-calc",
       "steps": [
         "Step 1: Choose tool (pandas for data, openpyxl for formulas/formatting)",
         "Step 2: Create/Load workbook or existing file",
@@ -89,8 +89,8 @@
     },
     {
       "task_name": "protein-expression-analysis",
-      "skill_name": "xlsx",
-      "skill_dir": "skillsentry_tasks/tasks/protein-expression-analysis/environment/skills/xlsx",
+      "skill_name": "protein-expression-analysis",
+      "skill_dir": "skillsentry_tasks/tasks/protein-expression-analysis/environment/skills/protein-expression-analysis",
       "steps": [
         "Step 1: Choose tool (pandas for data, openpyxl for formulas/formatting)",
         "Step 2: Create/Load workbook or existing file",
@@ -147,8 +147,8 @@
     },
     {
       "task_name": "3d-scan-calc",
-      "skill_name": "stl-processing",
-      "skill_dir": "skillsentry_tasks/tasks/3d-scan-calc/environment/skills/stl-processing",
+      "skill_name": "mesh-analysis",
+      "skill_dir": "skillsentry_tasks/tasks/3d-scan-calc/environment/skills/mesh-analysis",
       "steps": [
         "Step 1: Parse binary STL file — read header, triangles, and extract Material ID from Attribute Byte Count",
         "Step 2: Build connectivity graph — identify connected components by triangle adjacency",

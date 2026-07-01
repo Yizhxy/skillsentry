@@ -1,0 +1,87 @@
+{
+  "skill": "excitation-signal-design",
+  "steps": [
+    {
+      "stepId": "run_calibration",
+      "description": "Run calibration test — start at steady state and apply a step input to the HVAC system",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "python|hvac_simulator|simulate|step_input|step" },
+            { "tool": "Write", "input_match": { "content": "calibration|heater_power|phase|step.*input|steady.*state" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Start at a steady-state operating point before applying any input change.",
+          "Apply a step input (change input from 0 to a constant value) and hold for 3-5 time constants."
+        ],
+        "warnings": [
+          "Do not apply sinusoidal or random inputs — use a step input for first-order system identification."
+        ]
+      }
+    },
+    {
+      "stepId": "estimate_parameters",
+      "description": "Estimate system parameters — fit a first-order model (gain K, time constant τ) from step response",
+      "depends_on": ["run_calibration"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "curve_fit|scipy|optimize|exponential|first.*order|tau|time.*constant" },
+            { "tool": "Write", "input_match": { "content": "curve_fit|scipy|optimize|K|tau|r_squared|fitting|first.*order" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Fit a first-order model: y(t) = K * (1 - exp(-t/tau)) * step_amplitude.",
+          "Use scipy.optimize.curve_fit with the exponential model to extract K and tau from the recorded response."
+        ]
+      }
+    },
+    {
+      "stepId": "tune_controller",
+      "description": "Calculate PID controller gains using IMC or Ziegler-Nichols tuning based on estimated parameters",
+      "depends_on": ["estimate_parameters"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "Kp|Ki|Kd|IMC|tuning|gain|lambda|ziegler" },
+            { "tool": "Write", "input_match": { "content": "Kp|Ki|Kd|gains|tuning|IMC|lambda" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "run_control",
+      "description": "Run closed-loop PID control and verify setpoint tracking performance",
+      "depends_on": ["tune_controller"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "PID|control|setpoint|error|integral|closed.?loop" },
+            { "tool": "Write", "input_match": { "content": "control|setpoint|error|heater_power|overshoot|settling|integral" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Run the simulator with PID control enabled and check that the temperature converges to the setpoint.",
+          "Compute performance metrics: overshoot (%), settling time, steady-state error."
+        ]
+      }
+    }
+  ],
+  "termination": ["run_calibration", "estimate_parameters", "tune_controller", "run_control"]
+}

@@ -1,0 +1,84 @@
+{
+  "skill": "excitation-signal-design",
+  "steps": [
+    {
+      "stepId": "run_calibration",
+      "description": "Run calibration test — apply a step input from steady state and record the response",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "python|hvac_simulator|simulate|step" },
+            { "tool": "Write", "input_match": { "content": "calibration|heater_power|step.*input|steady.*state" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Start at a known steady-state operating point, apply a step input, and hold for 3-5 time constants before recording."
+        ],
+        "warnings": [
+          "Do not use sinusoidal or random inputs — a clean step input is required for first-order system identification."
+        ]
+      }
+    },
+    {
+      "stepId": "estimate_parameters",
+      "description": "Estimate system parameters — fit first-order model (K, tau) from step response",
+      "depends_on": ["run_calibration"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "curve_fit|scipy|optimize|exponential|tau" },
+            { "tool": "Write", "input_match": { "content": "curve_fit|K|tau|fitting|first.*order" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Fit y(t) = K*(1 - exp(-t/tau)) using scipy.optimize.curve_fit to extract gain K and time constant tau."
+        ]
+      }
+    },
+    {
+      "stepId": "tune_controller",
+      "description": "Calculate PID controller gains using IMC or Ziegler-Nichols tuning",
+      "depends_on": ["estimate_parameters"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "Kp|Ki|Kd|IMC|tuning|gain|lambda" },
+            { "tool": "Write", "input_match": { "content": "Kp|Ki|Kd|gains|tuning|IMC|lambda" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "run_control",
+      "description": "Run closed-loop PID control and verify setpoint tracking performance",
+      "depends_on": ["tune_controller"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "PID|control|setpoint|error|integral" },
+            { "tool": "Write", "input_match": { "content": "control|setpoint|error|heater_power|overshoot|settling" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Verify the temperature converges to the setpoint and compute overshoot (%) and settling time as performance metrics."
+        ]
+      }
+    }
+  ],
+  "termination": ["run_calibration", "estimate_parameters", "tune_controller", "run_control"]
+}

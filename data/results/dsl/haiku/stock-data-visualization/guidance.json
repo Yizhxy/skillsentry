@@ -1,0 +1,118 @@
+{
+  "skill": "d3-visualization",
+  "steps": [
+    {
+      "stepId": "load_and_parse_data",
+      "description": "Load and parse stock data from CSV files using d3.csv() or Node.js fs + d3-dsv",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "d3\\.csv|read.*csv|parse.*csv|fs\\.readFile.*csv" },
+            { "tool": "Write", "input_match": { "content": "d3\\.csv|readFileSync.*csv|d3\\.tsvParse|d3\\.csvParse|fs.*csv" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "create_visualization",
+      "description": "Create bubble chart with D3 force simulation — size by market cap, color by sector, cluster by sector",
+      "depends_on": ["load_and_parse_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "d3\\.forceSimulation|d3\\.forceManyBody|d3\\.forceCollide|bubble|circle" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Fix initial node positions deterministically (e.g., sorted nodes on a grid) before running the force simulation.",
+          "Run exactly N fixed ticks (simulation.stop(); for (let i=0;i<N;i++) simulation.tick()) for reproducibility."
+        ],
+        "warnings": [
+          "Never use Math.random() for initial positions — the output must be deterministic across runs."
+        ]
+      }
+    },
+    {
+      "stepId": "vendor_d3_offline",
+      "description": "Vendor D3 library locally — do not load from CDN; pin to a specific version",
+      "depends_on": ["load_and_parse_data"],
+      "constraints": [
+        { "parameter": "D3 version", "requirement": "pin to d3@7.9.0 and vendor the bundle locally" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "npm.*install.*d3|cp.*d3.*vendor|wget.*d3.*min\\.js" },
+            { "tool": "Write", "input_match": { "content": "vendor.*d3|d3\\.v7.*min\\.js|d3.*v7.*min|src.*vendor" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "cdn\\.jsdelivr\\.net|unpkg\\.com.*d3|cdnjs\\.cloudflare.*d3" },
+          "reason": "❌ Do not load D3 from a CDN. The task environment has no network access. Vendor a pinned D3 bundle locally (e.g., vendor/d3.v7.9.0.min.js) and reference it with a relative path."
+        }
+      ]
+    },
+    {
+      "stepId": "add_interactivity",
+      "description": "Add interactivity — tooltips on hover, click handlers for selection, bidirectional linking with data table",
+      "depends_on": ["create_visualization"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "mouseover|tooltip|click.*handler|on\\('click|on\\('mouseover" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "ensure_determinism",
+      "description": "Ensure output is deterministic — sort data, fix positions, use stable IDs, no random/Date calls",
+      "depends_on": ["create_visualization"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "sort\\(|localeCompare|stable.*id|clip.*id|deterministic|nodes\\.sort" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "Math\\.random\\(\\)" },
+          "reason": "❌ Do not use Math.random() — visualization output must be deterministic. Use deterministic initial positions (e.g., place nodes on a grid sorted by sector and market cap)."
+        }
+      ]
+    },
+    {
+      "stepId": "export_standalone_html",
+      "description": "Export as standalone HTML with all assets inlined or vendored — no external dependencies",
+      "depends_on": ["add_interactivity", "vendor_d3_offline"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "path_match": "\\.html$" },
+            { "tool": "Bash", "command_match": "writeFileSync.*\\.html|write.*chart\\.html|write.*index\\.html" }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["create_visualization", "vendor_d3_offline", "export_standalone_html"]
+}

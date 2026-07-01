@@ -251,9 +251,28 @@ def collect_traces(
     dry_run: bool = False,
     max_workers: int = 5,
 ) -> list[TraceData]:
-    """Run harbor for each query with current rules in parallel, return collected traces."""
+    """Run harbor for each query with current rules in parallel, return collected traces.
+
+    The harbor environment is taken from the first task instance in
+    TASKS_ROOT/<task_name>/ that contains an environment/ directory.
+    All query variants (original + paraphrases) within the same skill share
+    the same execution environment; only instruction.md differs.
+    """
     skill_name = get_skill_name(task_name)
-    src_task_dir = config.TASKS_ROOT / task_name
+
+    # Find the environment dir from the first available task instance
+    task_root = config.TASKS_ROOT / task_name
+    src_task_dir: Optional[Path] = None
+    if task_root.exists():
+        for inst_dir in sorted(task_root.iterdir()):
+            if inst_dir.is_dir() and (inst_dir / "environment").exists():
+                src_task_dir = inst_dir
+                break
+    if src_task_dir is None:
+        print(f"  [error] No task instance with environment/ found under {task_root}",
+              file=sys.stderr)
+        return []
+
     traces = []
 
     if dry_run:

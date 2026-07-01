@@ -1,0 +1,109 @@
+{
+  "skill": "powerlifting-coef-calc",
+  "steps": [
+    {
+      "stepId": "choose_tool",
+      "description": "Choose appropriate tool: pandas for data inspection/loading, openpyxl for writing formulas and formatting",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "openpyxl" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "import.*openpyxl|import.*pandas|from.*openpyxl|from.*pandas" },
+            { "tool": "Write", "input_match": { "content": "import openpyxl|import pandas|from openpyxl|from pandas" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "load_workbook",
+      "description": "Load existing workbook or create a new one",
+      "depends_on": ["choose_tool"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "openpyxl|load_workbook|pandas|pd\\.read_excel" },
+            { "tool": "Write", "input_match": { "content": "openpyxl|load_workbook|pd\\.read_excel|Workbook\\(" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "modify_workbook",
+      "description": "Modify workbook — add/edit data and Excel formulas (not hardcoded Python values)",
+      "depends_on": ["load_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "ws\\[|sheet\\[|\\.cell\\(|=['\"]=" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "for.*row.*in.*ws\\.iter_rows.*:.*ws\\[.*\\].*=.*(?!.*formula)" },
+          "reason": "❌ Use Excel formulas (e.g., ws['A1'] = '=SUM(B1:B10)') instead of hardcoding computed values row-by-row. Excel formulas allow dynamic recalculation."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Always write Excel formula strings (e.g., '=WILKS_COEFF(A1)') rather than computing and writing static numbers.",
+          "Use openpyxl for writing formulas; use pandas only for inspecting raw data."
+        ]
+      }
+    },
+    {
+      "stepId": "save_workbook",
+      "description": "Save workbook to the output .xlsx file",
+      "depends_on": ["modify_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "python.*\\.py|\\.save\\(|wb\\.save" },
+            { "tool": "Write", "input_match": { "content": "\\.save\\(|wb\\.save|to_excel\\(" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "recalculate_formulas",
+      "description": "Recalculate all formulas using recalc.py (mandatory when Excel formulas are used)",
+      "depends_on": ["save_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "recalc\\.py|python.*recalc" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "verify_output",
+      "description": "Verify recalc output — fix any formula errors and re-run recalc until status shows success",
+      "depends_on": ["recalculate_formulas"],
+      "constraints": [],
+      "logical_actions": [],
+      "on_enter": {
+        "suggestions": [
+          "Check recalc.py JSON output for 'status' and 'total_errors'. If errors_found, fix formulas and re-run recalc."
+        ],
+        "warnings": [
+          "Do not assume success — always check that recalc output shows 'status: success' and 'total_errors: 0'."
+        ]
+      }
+    }
+  ],
+  "termination": ["save_workbook", "recalculate_formulas"]
+}

@@ -1,0 +1,126 @@
+{
+  "skill": "fjsp-repair-with-downtime-and-policy",
+  "steps": [
+    {
+      "stepId": "parse_inputs",
+      "description": "Parse input data and build data structures for jobs, operations, machines, downtimes and policy",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": []
+    },
+    {
+      "stepId": "build_precedence_order",
+      "description": "Determine precedence-aware repair order: sort operations by (index, baseline start, base index)",
+      "depends_on": ["parse_inputs"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "precedence|sort.*key.*lambda|repair.*order|sorted.*op|key=.*lambda" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "implement_overlap_detection",
+      "description": "Implement overlap detection using half-open intervals [s,e)",
+      "depends_on": ["build_precedence_order"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "def overlap|def.*overlaps|s.*<.*b.*and.*a.*<.*e|overlap.*return" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "return.*<=.*and.*<=" },
+          "reason": "⚠️ Use half-open intervals [s,e): correct formula is 's < b and a < e'. Using <= incorrectly flags adjacent intervals as overlapping."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Overlap check for intervals [a,b) and [s,e): return s < b and a < e — never use <=."
+        ]
+      }
+    },
+    {
+      "stepId": "implement_conflict_detection",
+      "description": "Implement has_conflict to check machine timeline and downtime conflicts",
+      "depends_on": ["implement_overlap_detection"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "def has_conflict|machine_intervals|downtime.*overlap|overlap.*downtime" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "implement_earliest_feasible_time",
+      "description": "Implement earliest_feasible_time with incremental forward scan (t += 1) from anchor",
+      "depends_on": ["implement_conflict_detection"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "def earliest.*feasible|t\\s*\\+=\\s*1|while.*has_conflict" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "next.*gap|jump.*to|binary.*search|bisect" },
+          "reason": "⚠️ Must scan forward incrementally (t += 1) from anchor — jumping or binary-searching breaks the minimality requirement."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Scan: while has_conflict(m, t, t+dur): t += 1 — find the earliest slot, not just any feasible slot."
+        ]
+      }
+    },
+    {
+      "stepId": "repair_operations_in_order",
+      "description": "Repair operations in precedence-aware order; record ALL operations in machine_intervals including frozen ones",
+      "depends_on": ["implement_earliest_feasible_time"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "for.*repair.*order|for.*precedence|machine_intervals.*append" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "if.*frozen.*:.*continue" },
+          "reason": "❌ CRITICAL: Even frozen operations MUST be appended to machine_intervals. Skipping them causes later operations to overlap with frozen ones."
+        }
+      ],
+      "on_enter": {
+        "warnings": [
+          "Always call machine_intervals[m].append((start, end)) for ALL operations — including frozen ones."
+        ]
+      }
+    },
+    {
+      "stepId": "output_repaired_schedule",
+      "description": "Output the fully repaired schedule",
+      "depends_on": ["repair_operations_in_order"],
+      "constraints": [],
+      "logical_actions": []
+    }
+  ],
+  "termination": ["repair_operations_in_order", "output_repaired_schedule"]
+}

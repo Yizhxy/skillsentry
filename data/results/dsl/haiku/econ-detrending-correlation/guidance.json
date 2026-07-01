@@ -1,0 +1,127 @@
+{
+  "skill": "macroeconomic-timeseries-detrending",
+  "steps": [
+    {
+      "stepId": "load_and_clean_data",
+      "description": "Load and clean data — handle missing values, ensure proper time ordering",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "pandas" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "read_excel|read_csv|pd\\.read|ExcelFile" },
+            { "tool": "Write", "input_match": { "content": "read_excel|read_csv|pd\\.read|ExcelFile" } }
+          ]
+        },
+        {
+          "actionId": 2,
+          "patterns": [
+            { "tool": "Bash", "command_match": "dropna|fillna|drop|clean|sort_values|sort_index" },
+            { "tool": "Write", "input_match": { "content": "dropna|fillna|drop|clean|sort_values|sort_index" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "harmonize_frequency",
+      "description": "Harmonize data frequency — aggregate to a common period (quarterly or annual)",
+      "depends_on": ["load_and_clean_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "resample|groupby|mean\\(|aggregate|quarterly|annual|freq" },
+            { "tool": "Write", "input_match": { "content": "resample|groupby|mean\\(|aggregate|quarterly|annual|freq" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "convert_to_real_terms",
+      "description": "Convert to real terms — deflate nominal values using appropriate price index",
+      "depends_on": ["harmonize_frequency"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "deflat|cpi|price_index|real|nominal|\\/.*cpi|\\/.*deflator" },
+            { "tool": "Write", "input_match": { "content": "deflat|cpi|price_index|real|nominal|\\/.*cpi|\\/.*deflator" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "apply_log_transformation",
+      "description": "Apply log transformation — for positive level variables before filtering",
+      "depends_on": ["convert_to_real_terms"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "np\\.log|numpy\\.log|math\\.log|\\bln\\b" },
+            { "tool": "Write", "input_match": { "content": "np\\.log|numpy\\.log|math\\.log|\\bln\\b" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "apply_hp_filter",
+      "description": "Apply HP filter — use appropriate lambda for data frequency (1600 for quarterly)",
+      "depends_on": ["apply_log_transformation"],
+      "constraints": [
+        { "parameter": "lambda", "requirement": "must be 1600 for quarterly data" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "hpfilter|hp_filter|statsmodels|hodrick|prescott|sm\\.tsa\\.filters" },
+            { "tool": "Write", "input_match": { "content": "hpfilter|hp_filter|statsmodels|hodrick|prescott|sm\\.tsa\\.filters" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "analyze_cyclical_component",
+      "description": "Analyze cyclical component — compute correlations and business cycle statistics",
+      "depends_on": ["apply_hp_filter"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "corrcoef|pearsonr|correlation|spearman|\\bcorr\\(" },
+            { "tool": "Write", "input_match": { "content": "corrcoef|pearsonr|correlation|spearman|\\bcorr\\(" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Bash",
+          "command_match": "corrcoef\\([^)]*\\btrend\\b[^)]*,\\s*[^)]*\\btrend\\b[^)]*\\)",
+          "reason": "❌ Error: Do not compute correlation of trends. Compute correlation of cyclical components instead!"
+        },
+        {
+          "tool": "Write",
+          "input_match": { "content": "corrcoef\\([^)]*\\btrend\\b[^)]*,\\s*[^)]*\\btrend\\b[^)]*\\)" },
+          "reason": "❌ Error: Do not compute correlation of trends. Compute correlation of cyclical components instead!"
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Compute correlation of cyclical components (the cycle output of hpfilter), not trend components."
+        ],
+        "warnings": [
+          "hpfilter returns (cycle, trend) — use cycle, not trend, for business cycle analysis."
+        ]
+      }
+    }
+  ],
+  "termination": ["load_and_clean_data", "harmonize_frequency", "convert_to_real_terms", "apply_log_transformation", "apply_hp_filter", "analyze_cyclical_component"]
+}

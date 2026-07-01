@@ -1,0 +1,132 @@
+{
+  "skill": "geospatial-analysis",
+  "steps": [
+    {
+      "stepId": "load_geospatial_data",
+      "description": "Load earthquake and plate boundary GeoJSON data with geopandas",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "geopandas" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "gpd\\.read_file|geopandas\\.read_file|read_file.*geojson|read_file.*json" },
+            { "tool": "Write", "input_match": { "content": "gpd\\.read_file|geopandas\\.read_file|read_file" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "create_geodataframe",
+      "description": "Create a GeoDataFrame from earthquake coordinate data with EPSG:4326 CRS",
+      "depends_on": ["load_geospatial_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "GeoDataFrame|GeoSeries|Point\\(|geometry.*Point" },
+            { "tool": "Write", "input_match": { "content": "GeoDataFrame|Point\\(|geometry=|crs.*4326|EPSG.*4326" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "spatial_filter",
+      "description": "Filter earthquakes within Pacific plate using spatial .within() operation",
+      "depends_on": ["create_geodataframe"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "\\.within\\(|within.*plate|unary_union" },
+            { "tool": "Write", "input_match": { "content": "\\.within\\(|unary_union|Pacific" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use gdf_plates[gdf_plates['PlateName'] == 'Pacific'].geometry.unary_union to get the Pacific plate polygon.",
+          "Then filter: earthquakes_in_plate = gdf_eq[gdf_eq.within(pacific_poly)].copy()"
+        ]
+      }
+    },
+    {
+      "stepId": "project_to_metric_crs",
+      "description": "Project to metric CRS (EPSG:4087) before distance calculations",
+      "depends_on": ["spatial_filter"],
+      "constraints": [
+        { "parameter": "CRS", "requirement": "EPSG:4087 (World Equidistant Cylindrical) for accurate distance in meters" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "to_crs|EPSG.*4087|4087" },
+            { "tool": "Write", "input_match": { "content": "to_crs|EPSG.*4087|4087" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "distance\\(.*\\)(?!.*to_crs)(?!.*4087)" },
+          "reason": "❌ Never calculate distances in EPSG:4326 (geographic coordinates). Always project to a metric CRS (EPSG:4087) first — distances in degrees are not meaningful."
+        },
+        {
+          "tool": "Write",
+          "input_match": { "content": "haversine|math\\.sin.*lat|math\\.cos.*lat" },
+          "reason": "⚠️ Do not implement manual Haversine formulas. Use geopandas .to_crs('EPSG:4087') + .distance() instead — it is more accurate and handles edge cases automatically."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Project BOTH the earthquake points AND the plate boundaries to EPSG:4087 before calling .distance()."
+        ],
+        "warnings": [
+          "Never compute distances while the data is in EPSG:4326 — latitude/longitude are angles, not metric distances."
+        ]
+      }
+    },
+    {
+      "stepId": "calculate_distances",
+      "description": "Calculate distances from earthquakes to Pacific plate boundaries using .distance()",
+      "depends_on": ["project_to_metric_crs"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "\\.distance\\(|distance.*boundary|distance.*km" },
+            { "tool": "Write", "input_match": { "content": "\\.distance\\(|unary_union|distance_km|distance_m" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Combine boundary segments with .unary_union before calling .distance() — one vectorised call is much faster.",
+          "Divide result by 1000 to convert meters to kilometers."
+        ]
+      }
+    },
+    {
+      "stepId": "find_extreme_and_output",
+      "description": "Identify the furthest earthquake using .nlargest() and format output JSON",
+      "depends_on": ["calculate_distances"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "nlargest|idxmax|argmax|furthest|farthest|json\\.dump" },
+            { "tool": "Write", "input_match": { "content": "nlargest|idxmax|furthest|farthest|json\\.dump" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["spatial_filter", "project_to_metric_crs", "calculate_distances", "find_extreme_and_output"]
+}

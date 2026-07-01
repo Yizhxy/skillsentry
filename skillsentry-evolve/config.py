@@ -20,30 +20,41 @@ HARBOR_MODEL   = os.environ.get("HARBOR_MODEL", "gpt-5.4")
 HARBOR_TIMEOUT = int(os.environ.get("HARBOR_TIMEOUT", "900"))
 
 # Paths
-# Default to the repo root (two levels up from this file: skillsentry-evolve/config.py),
-# so the project runs out-of-the-box from any checkout. Override with SKILLSENTRY_PROJECT.
+# _PROJECT: repo root (.../skillsentry/), auto-detected from this file's location.
+# skillsentry-evolve/config.py → parent = skillsentry-evolve/ → parent = skillsentry/
 _PROJECT = Path(os.environ.get("SKILLSENTRY_PROJECT",
     str(Path(__file__).resolve().parent.parent)))
 
-DATASET_ROOT    = Path(os.environ.get("DATASET_ROOT",
-    str(_PROJECT / "skillsentry_tasks" / "dataset_for_validation")))
-TASKS_ROOT      = Path(os.environ.get("TASKS_ROOT",
-    str(_PROJECT / "skillsentry" / "tasks")))
-RULES_REF_DIR   = Path(os.environ.get("RULES_REF_DIR",
-    str(_PROJECT / "skillsentry" / "tasks")))
+# data/evolve/<skill>/{evolve,test,baseline}/ — prepared by utils/prepare_data.py
+# Q_evol queries live under EVOLVE_ROOT/<skill>/evolve/
+# Q_test  queries live under EVOLVE_ROOT/<skill>/test/
+# Baseline traces  under EVOLVE_ROOT/<skill>/baseline/
+EVOLVE_ROOT  = Path(os.environ.get("EVOLVE_ROOT",
+    str(_PROJECT / "data" / "evolve")))
+
+# Raw task directories (environment/, skills/, tests/, etc.)
+# Used for SKILL.md extraction and harbor environment setup.
+TASKS_ROOT   = Path(os.environ.get("TASKS_ROOT",
+    str(_PROJECT / "data" / "raw" / "skillsentry_tasks")))
+
+RULES_REF_DIR = Path(os.environ.get("RULES_REF_DIR",
+    str(_PROJECT / "data" / "results" / "dsl")))
+
 SKILLSENTRY_SRC = Path(os.environ.get("SKILLSENTRY_SRC",
     str(_PROJECT / "skillsentry" / "skillsentry")))
 HOOKS_SRC       = Path(os.environ.get("HOOKS_SRC",
     str(_PROJECT / "skillsentry" / "hooks")))
-OUTPUT_DIR      = Path(os.environ.get("OUTPUT_DIR",
-    str(_PROJECT / "skillsentry-evolve" / "output_rules")))
-PROMPTS_DIR     = Path(__file__).resolve().parent / "prompts"
 
-# task → skill mapping file (canonical skill for each task in dataset_for_validation)
-TASK_SKILL_MAP  = Path(os.environ.get("TASK_SKILL_MAP",
-    str(_PROJECT / "skillsentry-evolve" / "task_skill_map.json")))
+# Output: evolved runtime guidance
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR",
+    str(_PROJECT / "data" / "results" / "evolve")))
+
+PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+
+# task → skill mapping
+TASK_SKILL_MAP = Path(os.environ.get("TASK_SKILL_MAP",
+    str(Path(__file__).resolve().parent / "task_skill_map.json")))
 
 # Mining tuning
 PATTERN_MIN_FREQ         = int(os.environ.get("PATTERN_MIN_FREQ", "2"))
-# Max tool calls to include per trace in LLM prompts (0 = no truncation)
 MAX_TOOL_CALLS_IN_PROMPT = int(os.environ.get("MAX_TOOL_CALLS_IN_PROMPT", "0"))
