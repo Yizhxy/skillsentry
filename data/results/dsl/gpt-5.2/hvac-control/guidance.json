@@ -1,0 +1,101 @@
+{
+  "skill": "excitation-signal-design",
+  "steps": [
+    {
+      "stepId": "run_calibration",
+      "description": "Run calibration test — apply a step input from steady state and record the response",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "python|hvac_simulator|simulate|step" },
+            { "tool": "Write", "input_match": { "content": "calibration|heater_power|step.*input|steady.*state" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Start at a known steady-state operating point. Apply a single constant step input and hold for 3–5 time constants.",
+          "Save calibration results to calibration_log.json with required fields including 'phase': 'calibration' and 'heater_power_test' as a scalar number."
+        ],
+        "warnings": [
+          "heater_power_test must be a scalar (int or float), NOT a list or dict of segments."
+        ]
+      },
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "heater_power_test.*segments|heater_power_test.*\\[\\[" },
+          "reason": "❌ Error: heater_power_test must be a single scalar value (the step magnitude), not a list of segments. The verifier checks isinstance(data['heater_power_test'], (int, float))."
+        }
+      ]
+    },
+    {
+      "stepId": "estimate_parameters",
+      "description": "Estimate system parameters — fit first-order model (K, tau) from step response using curve_fit",
+      "depends_on": ["run_calibration"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "curve_fit|scipy|optimize|exponential|tau" },
+            { "tool": "Write", "input_match": { "content": "curve_fit|K|tau|r_squared|fitting|first.*order" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Fit the first-order step response: y(t) = K * (1 - exp(-t/tau)) * step_amplitude using scipy.optimize.curve_fit.",
+          "Save K, tau, r_squared, and fitting_error to estimated_params.json — the verifier checks K within ±15% and tau within ±20% of true values."
+        ],
+        "warnings": [
+          "Use only the steady-state response data for fitting — including transient startup noise inflates the K error beyond the 15% tolerance."
+        ]
+      }
+    },
+    {
+      "stepId": "tune_controller",
+      "description": "Calculate PID controller gains using IMC or Ziegler-Nichols tuning",
+      "depends_on": ["estimate_parameters"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "Kp|Ki|Kd|IMC|tuning|gain|lambda" },
+            { "tool": "Write", "input_match": { "content": "Kp|Ki|Kd|gains|tuning|IMC|lambda" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Save tuned gains to tuned_gains.json with fields Kp, Ki, Kd."
+        ]
+      }
+    },
+    {
+      "stepId": "run_control",
+      "description": "Run closed-loop PID control and verify setpoint tracking performance",
+      "depends_on": ["tune_controller"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "PID|control|setpoint|error|integral" },
+            { "tool": "Write", "input_match": { "content": "control|setpoint|error|heater_power|overshoot|settling" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Save control_log.json (time-series) and metrics.json (overshoot %, settling time, steady-state error) — both are required by the verifier."
+        ]
+      }
+    }
+  ],
+  "termination": ["run_calibration", "estimate_parameters", "tune_controller", "run_control"]
+}

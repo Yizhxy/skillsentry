@@ -1,0 +1,118 @@
+{
+  "skill": "d3-visualization",
+  "steps": [
+    {
+      "stepId": "load_and_parse_data",
+      "description": "Load and parse stock data from CSV files",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "d3\\.csv|read.*csv|fs\\.readFile.*csv" },
+            { "tool": "Write", "input_match": { "content": "d3\\.csv|readFileSync.*csv|d3\\.csvParse|fs.*csv" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "vendor_d3_offline",
+      "description": "Vendor D3 locally — do not load from CDN; pin to a specific version",
+      "depends_on": ["load_and_parse_data"],
+      "constraints": [
+        { "parameter": "D3 version", "requirement": "pin to d3@7.9.0 and vendor locally" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "npm.*install.*d3|cp.*d3.*vendor|wget.*d3.*min\\.js" },
+            { "tool": "Write", "input_match": { "content": "vendor.*d3|d3\\.v7.*min\\.js|src.*vendor" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "cdn\\.jsdelivr\\.net|unpkg\\.com.*d3|cdnjs\\.cloudflare.*d3" },
+          "reason": "❌ Do not use CDN — the task environment has no network. Vendor a pinned local D3 bundle (e.g., vendor/d3.v7.9.0.min.js)."
+        }
+      ]
+    },
+    {
+      "stepId": "create_visualization",
+      "description": "Create bubble chart with D3 force simulation — size by market cap, color by sector",
+      "depends_on": ["load_and_parse_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "d3\\.forceSimulation|d3\\.forceManyBody|d3\\.forceCollide|bubble|circle" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Initialise node positions deterministically (sorted nodes placed on a grid) before running the simulation.",
+          "Run exactly N fixed ticks and call simulation.stop() for reproducible output — do not use alpha-based convergence."
+        ],
+        "warnings": [
+          "Do not use Math.random() for node positions — output must be deterministic across runs."
+        ]
+      }
+    },
+    {
+      "stepId": "add_interactivity",
+      "description": "Add tooltips on hover, click handlers for selection, bidirectional table linking",
+      "depends_on": ["create_visualization"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "mouseover|tooltip|click.*handler|on\\('click|on\\('mouseover" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "ensure_determinism",
+      "description": "Ensure output is deterministic — sort data, stable IDs, no random/Date calls",
+      "depends_on": ["create_visualization"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "sort\\(|localeCompare|stable.*id|nodes\\.sort" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "Math\\.random\\(\\)" },
+          "reason": "❌ Do not use Math.random() — place nodes on a deterministic grid sorted by sector and market cap."
+        }
+      ]
+    },
+    {
+      "stepId": "export_standalone_html",
+      "description": "Export as standalone HTML with all assets vendored",
+      "depends_on": ["add_interactivity", "vendor_d3_offline"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "path_match": "\\.html$" },
+            { "tool": "Bash", "command_match": "writeFileSync.*\\.html|write.*chart\\.html" }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["create_visualization", "vendor_d3_offline", "export_standalone_html"]
+}

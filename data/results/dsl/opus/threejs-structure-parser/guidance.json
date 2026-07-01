@@ -1,0 +1,130 @@
+{
+  "skill": "threejs",
+  "steps": [
+    {
+      "stepId": "load_scene",
+      "description": "Load the module, call createScene(), then immediately call updateMatrixWorld(true)",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "createScene|import.*object\\.js" },
+            { "tool": "Write", "input_match": { "content": "createScene|import.*object\\.js" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "createScene\\(\\)(?!.*updateMatrixWorld)" },
+          "reason": "❌ CRITICAL: Call root.updateMatrixWorld(true) immediately after createScene() before reading any matrixWorld — stale transforms cause large geometry errors."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Pattern: const root = createScene(); root.updateMatrixWorld(true); — these two calls must be adjacent."
+        ]
+      }
+    },
+    {
+      "stepId": "identify_parts",
+      "description": "Treat named THREE.Group nodes as parts/links",
+      "depends_on": ["load_scene"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "THREE\\.Group|isGroup|obj\\.name|traverse" },
+            { "tool": "Write", "input_match": { "content": "THREE\\.Group|isGroup|obj\\.name|traverse" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "assign_meshes",
+      "description": "Assign each mesh to its nearest named ancestor group",
+      "depends_on": ["identify_parts"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "parent|ancestor|traverse" },
+            { "tool": "Write", "input_match": { "content": "parent|ancestor|traverse|findGroup|nearest" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "bake_transforms",
+      "description": "Bake world transforms into geometry: applyMatrix4(matrixWorld) then toNonIndexed()",
+      "depends_on": ["assign_meshes"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "applyMatrix4|matrixWorld|toNonIndexed" },
+            { "tool": "Write", "input_match": { "content": "applyMatrix4|matrixWorld|toNonIndexed" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Bash",
+          "command_match": "node.*scripts/export_link_objs\\.mjs",
+          "reason": "⚠️ The skill-provided export_link_objs.mjs is missing toNonIndexed() after applyMatrix4(). Write your own export script with correct baking to avoid Chamfer distance errors >1.0."
+        },
+        {
+          "tool": "Write",
+          "input_match": { "content": "applyMatrix4.*matrixWorld(?!.*toNonIndexed)" },
+          "reason": "❌ CRITICAL: After applyMatrix4(mesh.matrixWorld), you MUST call toNonIndexed() if geometry has an index. Missing this causes OBJExporter to produce wrong face indices (Chamfer >1.0)."
+        },
+        {
+          "tool": "Write",
+          "input_match": { "content": "mesh\\.clone\\(\\).*group\\.add.*exporter\\.parse\\(group\\)" },
+          "reason": "❌ CRITICAL: Do NOT clone meshes into a group for export — this preserves local transforms. Bake geometry with applyMatrix4(matrixWorld) + toNonIndexed() instead."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Baking: geom = mesh.geometry.clone(); geom.applyMatrix4(mesh.matrixWorld); if (geom.index) geom = geom.toNonIndexed();"
+        ],
+        "warnings": [
+          "Never skip toNonIndexed() — OBJExporter silently produces wrong vertex indices with indexed BufferGeometry, causing Chamfer distance errors >1.0."
+        ]
+      }
+    },
+    {
+      "stepId": "export_objs",
+      "description": "Export per-part OBJ using deterministic (sorted) part ordering",
+      "depends_on": ["bake_transforms"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "OBJExporter|writeFileSync.*\\.obj" },
+            { "tool": "Write", "input_match": { "content": "OBJExporter|writeFileSync.*\\.obj" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "for.*const.*part.*of.*parts(?!.*sort)" },
+          "reason": "⚠️ Sort part names before iterating for export — unsorted iteration is non-deterministic and causes verifier failures."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Sort parts by name with localeCompare before exporting: Array.from(parts.values()).sort((a,b) => a.group.name.localeCompare(b.group.name))."
+        ]
+      }
+    }
+  ],
+  "termination": ["bake_transforms", "export_objs"]
+}

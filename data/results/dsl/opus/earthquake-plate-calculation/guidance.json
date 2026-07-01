@@ -1,0 +1,122 @@
+{
+  "skill": "geospatial-analysis",
+  "steps": [
+    {
+      "stepId": "load_geospatial_data",
+      "description": "Load earthquake and plate boundary GeoJSON data with geopandas",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "geopandas" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "gpd\\.read_file|geopandas\\.read_file|read_file.*geojson" },
+            { "tool": "Write", "input_match": { "content": "gpd\\.read_file|geopandas\\.read_file|read_file" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "create_geodataframe",
+      "description": "Create a GeoDataFrame from earthquake coordinate data with EPSG:4326 CRS",
+      "depends_on": ["load_geospatial_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "GeoDataFrame|GeoSeries|Point\\(" },
+            { "tool": "Write", "input_match": { "content": "GeoDataFrame|Point\\(|geometry=|crs.*4326|EPSG.*4326" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "spatial_filter",
+      "description": "Filter earthquakes within Pacific plate using spatial .within() operation",
+      "depends_on": ["create_geodataframe"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "\\.within\\(|unary_union" },
+            { "tool": "Write", "input_match": { "content": "\\.within\\(|unary_union|Pacific" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Get the Pacific plate polygon via .unary_union, then filter: gdf_eq[gdf_eq.within(pacific_poly)].copy()."
+        ]
+      }
+    },
+    {
+      "stepId": "project_to_metric_crs",
+      "description": "Project to EPSG:4087 before distance calculations",
+      "depends_on": ["spatial_filter"],
+      "constraints": [
+        { "parameter": "CRS", "requirement": "EPSG:4087 for accurate distance in meters" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "to_crs|EPSG.*4087|4087" },
+            { "tool": "Write", "input_match": { "content": "to_crs|EPSG.*4087|4087" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "haversine|math\\.sin.*lat|math\\.cos.*lat" },
+          "reason": "⚠️ Do not implement manual Haversine formulas. Use .to_crs('EPSG:4087') + .distance() instead."
+        }
+      ],
+      "on_enter": {
+        "warnings": [
+          "Never compute distances while data is in EPSG:4326 — project both points and boundaries to EPSG:4087 first."
+        ]
+      }
+    },
+    {
+      "stepId": "calculate_distances",
+      "description": "Calculate distances from earthquakes to Pacific plate boundaries using .distance()",
+      "depends_on": ["project_to_metric_crs"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "\\.distance\\(|distance.*km" },
+            { "tool": "Write", "input_match": { "content": "\\.distance\\(|unary_union|distance_km|distance_m" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Combine boundaries with .unary_union before .distance() — one vectorised call is faster and correct."
+        ]
+      }
+    },
+    {
+      "stepId": "find_extreme_and_output",
+      "description": "Identify furthest earthquake using .nlargest() and write output JSON",
+      "depends_on": ["calculate_distances"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "nlargest|idxmax|json\\.dump" },
+            { "tool": "Write", "input_match": { "content": "nlargest|idxmax|furthest|json\\.dump" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["spatial_filter", "project_to_metric_crs", "calculate_distances", "find_extreme_and_output"]
+}

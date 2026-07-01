@@ -23,14 +23,23 @@ from utils.task_data import TraceData, load_trace_from_trial, get_skill_name
 
 
 def setup_task(
-    src_task_dir: Path,
+    src_env_dir: Path,
     dst_task_dir: Path,
     query: str,
     rules: dict[str, Any],
     skill_name: str,
     skillsentry_skill: str = "",
 ) -> None:
-    """Stage a task directory with skillsentry enabled."""
+    """Stage a task directory for a harbor trial with skillsentry enabled.
+
+    Args:
+        src_env_dir: Path to the source environment/ directory (contains Dockerfile,
+                     data files, skills/). This is the real path (symlinks resolved).
+        dst_task_dir: Staging directory for this trial (will be created/replaced).
+        query: The task query text, written to instruction.md.
+        rules: Current runtime guidance (rules.json content).
+        skill_name: Canonical skill name, used for rules.json placement.
+    """
     def _rm_force(path: Path) -> None:
         """Remove a directory tree, skipping files that can't be deleted (root-owned)."""
         def onerror(func, p, exc):
@@ -38,20 +47,21 @@ def setup_task(
                 os.chmod(p, 0o755)
                 func(p)
             except Exception:
-                pass  # silently skip files we can't remove
+                pass
         shutil.rmtree(path, onerror=onerror)
 
     if dst_task_dir.exists():
         _rm_force(dst_task_dir)
-    shutil.copytree(src_task_dir, dst_task_dir, symlinks=True,
-                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-    (dst_task_dir / "instruction.md").write_text(
-        query.rstrip() + "\n", encoding="utf-8")
+    dst_task_dir.mkdir(parents=True, exist_ok=True)
 
-    # environment/ is mounted to /root/ inside the container.
-    # Everything that needs to be at /root/<x> must go under environment/<x>.
+    # Write task query
+    (dst_task_dir / "instruction.md").write_text(query.rstrip() + "\n", encoding="utf-8")
+
+    # Copy the environment/ directory (contains Dockerfile, data files, skills/)
+    # environment/ is mounted to /root/ inside the container by harbor.
     env_dir = dst_task_dir / "environment"
-    env_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src_env_dir, env_dir, symlinks=True,
+                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
 
     # Copy skillsentry package → /root/skillsentry/
     dst_ss = env_dir / "skillsentry"
@@ -220,16 +230,14 @@ def _run_single_query(
     rules: dict[str, Any],
     work_dir: Path,
     skill_name: str,
-    src_task_dir: Path,
+    src_env_dir: Path,
 ) -> tuple[int, Optional[TraceData]]:
     """Run a single harbor trial for one query. Returns (index, trace or None)."""
     import time
     task_stage = work_dir / f"query_{i:03d}" / "task"
-    # Use a unique output directory each time to avoid conflicts with
-    # root-owned files left over from previous rounds
     trial_out  = work_dir / f"query_{i:03d}" / f"output_{int(time.time())}"
 
-    setup_task(src_task_dir, task_stage, query, rules, skill_name, skillsentry_skill=skill_name)
+    setup_task(src_env_dir, task_stage, query, rules, skill_name, skillsentry_skill=skill_name)
     trial_dir = run_trial(task_stage, trial_out)
 
     trace = None
@@ -253,28 +261,39 @@ def collect_traces(
 ) -> list[TraceData]:
     """Run harbor for each query with current rules in parallel, return collected traces.
 
-    The harbor environment is taken from the first task instance in
-    TASKS_ROOT/<task_name>/ that contains an environment/ directory.
-    All query variants (original + paraphrases) within the same skill share
-    the same execution environment; only instruction.md differs.
+    The environment directory (Dockerfile, data files, skills/) is taken from
+    data/evolve/<task>/iter_0000/environment/, which symlinks to the raw task
+    instance environment (created by utils/prepare_data.py).
+
+    skillsentry hook + settings.json are injected by setup_task() via
+    _patch_dockerfile(), so no manual Dockerfile modification is needed.
     """
     skill_name = get_skill_name(task_name)
 
-    # Find the environment dir from the first available task instance
-    task_root = config.TASKS_ROOT / task_name
-    src_task_dir: Optional[Path] = None
-    if task_root.exists():
-        for inst_dir in sorted(task_root.iterdir()):
-            if inst_dir.is_dir() and (inst_dir / "environment").exists():
-                src_task_dir = inst_dir
+    # Find environment from the first iter with an environment/ dir
+    task_evolve_dir = config.EVOLVE_ROOT / task_name
+    src_env_dir: Optional[Path] = None
+    if task_evolve_dir.exists():
+        for iter_dir in sorted(task_evolve_dir.glob("iter_*")):
+            env = iter_dir / "environment"
+            if env.exists():
+                src_env_dir = env.resolve()  # follow symlink to real path
                 break
-    if src_task_dir is None:
-        print(f"  [error] No task instance with environment/ found under {task_root}",
-              file=sys.stderr)
+
+    if src_env_dir is None:
+        # Fallback: look in TASKS_ROOT (raw task instances)
+        task_raw_dir = config.TASKS_ROOT / task_name
+        if task_raw_dir.exists():
+            for inst_dir in sorted(task_raw_dir.iterdir()):
+                if inst_dir.is_dir() and (inst_dir / "environment").exists():
+                    src_env_dir = inst_dir / "environment"
+                    break
+
+    if src_env_dir is None:
+        print(f"  [error] No environment/ found for task {task_name}", file=sys.stderr)
         return []
 
     traces = []
-
     if dry_run:
         for i in range(len(queries)):
             print(f"  Query {i+1}/{len(queries)} ... [dry-run skipped]")
@@ -285,7 +304,7 @@ def collect_traces(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
-                _run_single_query, i, query, task_name, rules, work_dir, skill_name, src_task_dir
+                _run_single_query, i, query, task_name, rules, work_dir, skill_name, src_env_dir
             ): i
             for i, query in enumerate(queries)
         }
@@ -302,6 +321,4 @@ def collect_traces(
             except Exception as e:
                 print(f"  Query {i+1}/{len(queries)} ... error: {e}", file=sys.stderr)
 
-    # Collect non-None traces in original order
-    traces = [t for t in results if t is not None]
-    return traces
+    return [t for t in results if t is not None]

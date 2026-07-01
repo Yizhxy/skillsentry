@@ -1,0 +1,118 @@
+{
+  "skill": "pcap-analysis",
+  "steps": [
+    {
+      "stepId": "load_pcap_and_basic_counts",
+      "description": "Load PCAP file using scapy and extract basic packet counts by protocol",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "scapy" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "rdpcap|sniff.*pcap|scapy" },
+            { "tool": "Write", "input_match": { "content": "rdpcap|sniff|scapy|TCP|UDP|ICMP|ARP|IP" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use scapy.all.rdpcap() to load the PCAP and count packets by protocol layer (TCP, UDP, ICMP, ARP, total IP)."
+        ]
+      }
+    },
+    {
+      "stepId": "calc_time_series_metrics",
+      "description": "Calculate duration, packets per minute, and inter-arrival times (IAT)",
+      "depends_on": ["load_pcap_and_basic_counts"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "iat|inter.*arrival|packets_per_min|duration|timestamps" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "calc_size_statistics",
+      "description": "Compute total bytes, average/min/max packet size",
+      "depends_on": ["load_pcap_and_basic_counts"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "len\\(pkt\\)|packet.*size|bytes|avg.*size|max.*size|min.*size" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "calc_entropy_metrics",
+      "description": "Calculate Shannon entropy for src/dst IPs and ports; count unique ports",
+      "depends_on": ["load_pcap_and_basic_counts"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "entropy|shannon|scipy\\.stats|unique.*port|src.*ip|dst.*ip" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "build_ip_graph",
+      "description": "Build directed IP graph — count nodes/edges, compute network density and max in/out degree",
+      "depends_on": ["calc_entropy_metrics"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "networkx|DiGraph|nx\\.add_edge|in_degree|out_degree|density" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "detect_security_patterns",
+      "description": "Detect port scanning, DoS, and beaconing patterns",
+      "depends_on": ["build_ip_graph", "calc_time_series_metrics"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "port.*scan|syn.*ratio|DoS|beaconing|iat.*variance|traffic.*spike" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "write_csv_output",
+      "description": "Write all computed metrics to CSV file preserving comment lines",
+      "depends_on": ["detect_security_patterns", "calc_size_statistics"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "write.*csv|to_csv|csv\\.writer|open.*\\.csv" },
+            { "tool": "Write", "input_match": { "content": "to_csv|csv\\.writer|open.*\\.csv" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Preserve existing comment lines (lines starting with #) from the template CSV when writing output."
+        ]
+      }
+    }
+  ],
+  "termination": ["detect_security_patterns", "write_csv_output"]
+}

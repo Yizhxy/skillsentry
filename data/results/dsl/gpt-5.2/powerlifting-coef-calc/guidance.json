@@ -1,0 +1,136 @@
+{
+  "skill": "powerlifting-coef-calc",
+  "steps": [
+    {
+      "stepId": "read_task_requirements",
+      "description": "Read the task carefully — identify ALL required output sheets and their structure before writing any code",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "instruction\\.md$|task\\.md$|README" },
+            { "tool": "Bash", "command_match": "cat.*instruction|cat.*task|cat.*README" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Read instruction.md carefully and list ALL required output sheets by name before writing any code — missing a sheet causes total failure."
+        ],
+        "warnings": [
+          "The task may require multiple sheets (e.g., 'Results', 'Dots', 'Summary'). If any required sheet is missing or empty the verifier will fail ALL tests for that sheet."
+        ]
+      }
+    },
+    {
+      "stepId": "choose_tool",
+      "description": "Choose appropriate tool: pandas for data inspection, openpyxl for writing formulas and formatting",
+      "depends_on": ["read_task_requirements"],
+      "constraints": [
+        { "tool": "openpyxl" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "import.*openpyxl|import.*pandas|from.*openpyxl|from.*pandas" },
+            { "tool": "Write", "input_match": { "content": "import openpyxl|import pandas|from openpyxl|from pandas" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "load_workbook",
+      "description": "Load existing workbook or create a new one",
+      "depends_on": ["choose_tool"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "openpyxl|load_workbook|pd\\.read_excel" },
+            { "tool": "Write", "input_match": { "content": "openpyxl|load_workbook|pd\\.read_excel|Workbook\\(" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "modify_workbook",
+      "description": "Modify workbook — write Excel formulas to ALL required sheets",
+      "depends_on": ["load_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "ws\\[|sheet\\[|\\.cell\\(|=['\"]=" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "for.*row.*in.*ws\\.iter_rows.*:.*ws\\[.*\\].*=.*(?!.*formula)" },
+          "reason": "❌ Use Excel formula strings (e.g., '=WILKS(A1)') rather than hardcoding Python-computed values."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Write data and formulas to EVERY required output sheet identified in step 1 — an empty sheet fails all tests for that sheet.",
+          "Use Excel formula strings (e.g., '=IF(A1>B1, ...)', '=WILKS_FORMULA(...)') rather than computing values in Python."
+        ],
+        "warnings": [
+          "Do not leave any required sheet empty or skip it — even a sheet with only structural headers must have data populated."
+        ]
+      }
+    },
+    {
+      "stepId": "save_workbook",
+      "description": "Save workbook to the output .xlsx file",
+      "depends_on": ["modify_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "\\.save\\(|wb\\.save|python.*\\.py" },
+            { "tool": "Write", "input_match": { "content": "\\.save\\(|wb\\.save|to_excel\\(" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "recalculate_formulas",
+      "description": "Recalculate all formulas using recalc.py (mandatory when formulas are used)",
+      "depends_on": ["save_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "recalc\\.py|python.*recalc" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "verify_output",
+      "description": "Verify recalc output and confirm ALL required sheets are populated with correct data",
+      "depends_on": ["recalculate_formulas"],
+      "constraints": [],
+      "logical_actions": [],
+      "on_enter": {
+        "suggestions": [
+          "After recalc, open the file with openpyxl data_only=True and verify each required sheet has data in the expected cells.",
+          "Check recalc.py JSON output for 'status: success' and 'total_errors: 0' before finishing."
+        ],
+        "warnings": [
+          "Do not assume a sheet is populated just because you wrote formulas — verify actual cell values after recalculation."
+        ]
+      }
+    }
+  ],
+  "termination": ["save_workbook", "recalculate_formulas", "verify_output"]
+}

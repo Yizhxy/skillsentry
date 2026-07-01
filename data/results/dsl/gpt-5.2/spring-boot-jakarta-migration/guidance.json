@@ -1,0 +1,130 @@
+{
+  "skill": "spring-boot-migration",
+  "steps": [
+    {
+      "stepId": "analyze_project_structure",
+      "description": "Read pom.xml, identify all dependencies and current Java/Spring Boot versions",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "pom\\.xml$" },
+            { "tool": "Bash", "command_match": "cat.*pom\\.xml|grep.*version.*pom" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Read pom.xml and scan all .java files for javax.* imports to understand the full migration scope before making changes."
+        ]
+      }
+    },
+    {
+      "stepId": "update_java_version",
+      "description": "Update Java version to 21 in pom.xml",
+      "depends_on": ["analyze_project_structure"],
+      "constraints": [
+        { "parameter": "java.version", "requirement": "21" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Edit", "path_match": "pom\\.xml$" },
+            { "tool": "Write", "input_match": { "content": "java\\.version.*21|source.*21|target.*21" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "upgrade_spring_boot_version",
+      "description": "Upgrade Spring Boot parent to 3.2.x in pom.xml",
+      "depends_on": ["update_java_version"],
+      "constraints": [
+        { "parameter": "spring-boot.version", "requirement": "3.2.x" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Edit", "path_match": "pom\\.xml$" },
+            { "tool": "Write", "input_match": { "content": "spring-boot.*3\\.2|3\\.2\\..*spring" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "migrate_javax_to_jakarta",
+      "description": "Replace all javax.* EE namespace imports with jakarta.* in Java files",
+      "depends_on": ["upgrade_spring_boot_version"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "sed.*javax.*jakarta|find.*java.*javax" },
+            { "tool": "Write", "input_match": { "content": "jakarta\\.persistence|jakarta\\.validation|jakarta\\.servlet" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "import javax\\.persistence|import javax\\.validation|import javax\\.servlet" },
+          "reason": "⚠️ Spring Boot 3.x requires jakarta.* namespaces. Replace javax.persistence → jakarta.persistence, javax.validation → jakarta.validation, javax.servlet → jakarta.servlet."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Bulk replace: sed -i 's/javax\\.persistence/jakarta.persistence/g; s/javax\\.validation/jakarta.validation/g; s/javax\\.servlet/jakarta.servlet/g' $(find src -name '*.java')"
+        ],
+        "warnings": [
+          "Only EE namespaces migrate to jakarta.* — do NOT change javax.sql.*, javax.crypto.*, or other Java SE packages."
+        ]
+      }
+    },
+    {
+      "stepId": "update_spring_security",
+      "description": "Replace WebSecurityConfigurerAdapter with SecurityFilterChain @Bean",
+      "depends_on": ["migrate_javax_to_jakarta"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "SecurityFilterChain|@Bean.*SecurityFilterChain" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "WebSecurityConfigurerAdapter" },
+          "reason": "❌ WebSecurityConfigurerAdapter was removed in Spring Security 6. Use @Bean SecurityFilterChain instead."
+        }
+      ]
+    },
+    {
+      "stepId": "compile_and_test",
+      "description": "Run mvn clean compile then mvn test to verify migration",
+      "depends_on": ["update_spring_security"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "mvn.*compile|mvn.*clean|mvn.*test|mvn.*package" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Run 'mvn clean compile' first; fix any remaining javax.* import errors before running the full test suite."
+        ]
+      }
+    }
+  ],
+  "termination": ["migrate_javax_to_jakarta", "update_spring_security", "compile_and_test"]
+}

@@ -1,0 +1,139 @@
+{
+  "skill": "macroeconomic-timeseries-detrending",
+  "steps": [
+    {
+      "stepId": "load_and_clean_data",
+      "description": "Load and clean data — handle missing values, ensure proper time ordering",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "pandas" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "read_excel|read_csv|pd\\.read|ExcelFile" },
+            { "tool": "Write", "input_match": { "content": "read_excel|read_csv|pd\\.read|ExcelFile" } }
+          ]
+        },
+        {
+          "actionId": 2,
+          "patterns": [
+            { "tool": "Bash", "command_match": "dropna|fillna|drop|clean|sort_values|sort_index" },
+            { "tool": "Write", "input_match": { "content": "dropna|fillna|drop|clean|sort_values|sort_index" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "harmonize_frequency",
+      "description": "Harmonize data frequency — aggregate to a common period (quarterly or annual)",
+      "depends_on": ["load_and_clean_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "resample|groupby|mean\\(|aggregate|quarterly|annual|freq" },
+            { "tool": "Write", "input_match": { "content": "resample|groupby|mean\\(|aggregate|quarterly|annual|freq" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use pandas resample or groupby to aggregate all series to the same frequency before proceeding.",
+          "For partial-year data, aggregate ALL available sub-periods — do not drop or skip incomplete years."
+        ]
+      }
+    },
+    {
+      "stepId": "convert_to_real_terms",
+      "description": "Convert to real terms — deflate nominal values using appropriate price index",
+      "depends_on": ["harmonize_frequency"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "deflat|cpi|price_index|real|nominal" },
+            { "tool": "Write", "input_match": { "content": "deflat|cpi|price_index|real|nominal" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "apply_log_transformation",
+      "description": "Apply log transformation — for positive level variables before filtering",
+      "depends_on": ["convert_to_real_terms"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "np\\.log|numpy\\.log|math\\.log|\\bln\\b" },
+            { "tool": "Write", "input_match": { "content": "np\\.log|numpy\\.log|math\\.log|\\bln\\b" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "apply_hp_filter",
+      "description": "Apply HP filter — use lambda=1600 for quarterly data",
+      "depends_on": ["apply_log_transformation"],
+      "constraints": [
+        { "parameter": "lambda", "requirement": "must be 1600 for quarterly data" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "hpfilter|hp_filter|statsmodels|hodrick|prescott|sm\\.tsa\\.filters" },
+            { "tool": "Write", "input_match": { "content": "hpfilter|hp_filter|statsmodels|hodrick|prescott|sm\\.tsa\\.filters" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use statsmodels.tsa.filters.hp_filter.hpfilter(series, lamb=1600) for quarterly data.",
+          "hpfilter returns a tuple (cycle, trend) — keep both; you will need cycle in the next step."
+        ]
+      }
+    },
+    {
+      "stepId": "analyze_cyclical_component",
+      "description": "Analyze cyclical component — compute correlation of cycle outputs, not trends",
+      "depends_on": ["apply_hp_filter"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "corrcoef|pearsonr|correlation|spearman|\\bcorr\\(" },
+            { "tool": "Write", "input_match": { "content": "corrcoef|pearsonr|correlation|spearman|\\bcorr\\(" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Bash",
+          "command_match": "corrcoef\\([^)]*\\btrend\\b[^)]*,\\s*[^)]*\\btrend\\b[^)]*\\)",
+          "reason": "❌ Error: Do not compute correlation of trends. Use the cyclical component (cycle) from hpfilter instead."
+        },
+        {
+          "tool": "Write",
+          "input_match": { "content": "corrcoef\\([^)]*\\btrend\\b[^)]*,\\s*[^)]*\\btrend\\b[^)]*\\)" },
+          "reason": "❌ Error: Do not compute correlation of trends. Use the cyclical component (cycle) from hpfilter instead."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use cycle[0] from the hpfilter output — not trend[1] — to compute the business cycle correlation."
+        ],
+        "warnings": [
+          "Drop NaN rows jointly from both cycle series before computing correlation to avoid index alignment errors."
+        ]
+      }
+    }
+  ],
+  "termination": ["load_and_clean_data", "harmonize_frequency", "convert_to_real_terms", "apply_log_transformation", "apply_hp_filter", "analyze_cyclical_component"]
+}

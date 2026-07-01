@@ -1,21 +1,34 @@
 #!/usr/bin/env python3
-"""SkillSentry guidance generation — Initialization and Self-Evolving stages (paper §III-B/§III-C).
+"""
+SkillSentry guidance generation — Initialization and Self-Evolving stages (paper §III-B/§III-C).
 
-  Initialization stage: extract the skill specification from SKILL.md (§III-B) and mine
-  execution experience from baseline traces (§III-C) to construct the initial runtime guidance.
+Initialization stage (§III-B):
+  Extract skill specification from SKILL.md only. No baseline traces needed —
+  the first self-evolving round acts as the baseline (guidance not yet active).
 
-  Self-evolving stage: run the agent on new task queries under the current guidance, collect
-  successful/failed traces, and refine the guidance by execution-experience mining, iterating
-  for a fixed number of rounds.
+Self-evolving stage (§III-C):
+  Each round:
+    1. Run agent on a random sample of Q_evol queries under current guidance.
+    2. Collect success/failure traces.
+    3. Mine execution experience → update guidance.
+  After all rounds, evaluate on Q_test (randomly sampled, never used in evolving).
+
+Dataset split (paper §IV-A, done at runtime, not pre-split on disk):
+  - All 80 queries per skill are loaded together.
+  - 50 randomly assigned to Q_evol, 30 to Q_test (fixed seed per skill for reproducibility).
+  - Q_evol is further sampled round-by-round (5 queries per round × 10 rounds = 50).
+  - Q_test is never used during evolving; only for final evaluation.
 
 Usage:
   python main.py --task econ-detrending-correlation --mode initialize
-  python main.py --task econ-detrending-correlation --mode evolve --rounds 3
+  python main.py --task econ-detrending-correlation --mode evolve --rounds 10
+  python main.py --task econ-detrending-correlation --mode evaluate   # run on Q_test
   python main.py --task econ-detrending-correlation --mode initialize --dry-run
 """
 from __future__ import annotations
 
 import json
+import random
 import sys
 from pathlib import Path
 from typing import Any
@@ -28,15 +41,34 @@ import experience_mining
 from utils.runner import collect_traces
 from utils.task_data import (
     get_skill_name,
-    load_baseline_traces,
+    load_all_queries,
     load_current_rules,
-    load_queries,
     load_skill_md,
 )
 
 
 # ---------------------------------------------------------------------------
-# One round of execution-experience mining over a set of traces
+# Dataset split (paper §IV-A: 50 Q_evol / 30 Q_test, random per skill)
+# ---------------------------------------------------------------------------
+
+def _split_queries(all_queries: list[str], skill_name: str) -> tuple[list[str], list[str]]:
+    """Randomly split 80 queries into Q_evol (50) and Q_test (30).
+
+    Uses a deterministic seed derived from the skill name so the split is
+    reproducible across runs but differs per skill (avoids systematic bias).
+    """
+    rng = random.Random(hash(skill_name) & 0xFFFFFFFF)
+    indices = list(range(len(all_queries)))
+    rng.shuffle(indices)
+    evol_idx = indices[:50]
+    test_idx  = indices[50:80]
+    q_evol = [all_queries[i] for i in sorted(evol_idx)]
+    q_test = [all_queries[i] for i in sorted(test_idx)]
+    return q_evol, q_test
+
+
+# ---------------------------------------------------------------------------
+# One round of experience mining over a set of traces
 # ---------------------------------------------------------------------------
 
 def _mine_round(
@@ -49,7 +81,7 @@ def _mine_round(
     out_dir: Path,
 ) -> tuple[dict[str, Any], list[dict]]:
     successes = [t for t in traces if t.success]
-    failures = [t for t in traces if not t.success]
+    failures  = [t for t in traces if not t.success]
     print(f"  Round {round_num}: {len(successes)} success, {len(failures)} failure")
 
     workflow_steps = experience_mining.get_workflow_steps(guidance)
@@ -93,57 +125,72 @@ def _record_round(out_dir: Path, round_num: int, mode: str, traces: list, diff_l
         "n_field_changes": len(diff_log),
     })
     state_io.save(out_dir, st)
-    print(f"  Reward: {mean_r:.2f}  ({sum(t.success for t in traces)}/{len(traces)} pass)  "
-          f"| {len(diff_log)} field changes")
+    print(f"  Reward: {mean_r:.2f}  ({sum(t.success for t in traces)}/{len(traces)} pass)"
+          f"  | {len(diff_log)} field changes")
 
 
 # ---------------------------------------------------------------------------
-# Initialization stage (paper §III-B + §III-C on baseline traces)
+# Initialization stage (paper §III-B)
 # ---------------------------------------------------------------------------
 
 def initialize_stage(task_name: str, dry_run: bool = False) -> None:
+    """Initialization stage: extract skill specification from SKILL.md only.
+
+    No baseline traces are needed here. The first self-evolving round (round 1)
+    acts as the baseline — at that point guidance is not yet active, so the agent
+    runs freely and the resulting traces bootstrap the experience mining.
+    """
     print(f"\n{'='*60}\nInitialization stage: {task_name}\n{'='*60}")
     skill_name = get_skill_name(task_name)
     out_dir = config.OUTPUT_DIR / skill_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     skill_md = load_skill_md(task_name)
-    print(f"  Skill: {skill_name} | SKILL.md: {'found' if skill_md else 'not found'}")
-
-    traces = load_baseline_traces(task_name)
-    successes = [t for t in traces if t.success]
-    print(f"  Baseline traces: {len(traces)} ({len(successes)} success, "
-          f"{len(traces) - len(successes)} failure)")
-    if not traces:
-        print("  [error] No baseline traces found")
+    print(f"  Skill: {skill_name} | SKILL.md: {'found' if skill_md else 'NOT FOUND'}")
+    if not skill_md:
+        print("  [error] SKILL.md not found — cannot extract skill specification")
         return
+
     if dry_run:
-        print("  [dry-run] Skipping LLM calls and mining")
-        for t in traces:
-            print(f"    {t.source}: reward={t.reward}, tool_calls={len(t.parsed.tool_calls)}")
+        print("  [dry-run] Would extract skill specification from SKILL.md")
         return
 
-    # §III-B — Skill Specification Extraction
+    # §III-B — Skill Specification Extraction: LLM parses SKILL.md → DSL skeleton
     print("  §III-B Skill Specification Extraction ...", end=" ", flush=True)
     spec = skill_spec_extraction.extract_skill_spec(skill_md, skill_name)
     print(f"done ({len(spec.get('steps', []))} steps)")
 
-    # §III-C — Execution Experience Mining over baseline traces
-    print("  §III-C Execution Experience Mining ...")
-    guidance, diff_log = _mine_round(task_name, skill_name, skill_md, 0, traces, spec, out_dir)
-
+    # Save as initial guidance (experience fields empty — to be populated by evolving)
     (out_dir / "rules.json").write_text(
-        json.dumps(guidance, indent=2, ensure_ascii=False), encoding="utf-8")
-    _record_round(out_dir, 0, "initialize", traces, diff_log)
-    print(f"\n  Initialization done. Guidance: {out_dir / 'rules.json'}")
+        json.dumps(spec, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # Also save to data/results/dsl/ for reference
+    dsl_path = config.RULES_REF_DIR / skill_name / "guidance.json"
+    dsl_path.parent.mkdir(parents=True, exist_ok=True)
+    dsl_path.write_text(json.dumps(spec, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    print(f"\n  Initialization done.")
+    print(f"  Guidance skeleton: {out_dir / 'rules.json'}")
+    print(f"  DSL reference:     {dsl_path}")
+    print(f"  Next: run 'evolve' to start self-evolving (round 1 = baseline).")
 
 
 # ---------------------------------------------------------------------------
-# Self-evolving stage (paper §III-C iterated over new queries)
+# Self-evolving stage (paper §III-C)
 # ---------------------------------------------------------------------------
 
 def self_evolving_stage(task_name: str, num_rounds: int, queries_per_round: int,
                         dry_run: bool = False) -> None:
+    """Self-evolving stage.
+
+    Round 1 is the baseline: guidance is loaded (DSL skeleton only, no experience
+    fields yet), so the agent runs with minimal intervention. Subsequent rounds
+    progressively improve the guidance.
+
+    Queries are randomly split at runtime:
+      - Q_evol (50 queries): used for self-evolving rounds
+      - Q_test (30 queries): held-out, never used during evolving
+    """
     print(f"\n{'='*60}\nSelf-evolving stage: {task_name} | rounds={num_rounds} | "
           f"queries/round={queries_per_round}\n{'='*60}")
     skill_name = get_skill_name(task_name)
@@ -157,22 +204,40 @@ def self_evolving_stage(task_name: str, num_rounds: int, queries_per_round: int,
         print(f"  Loaded guidance from: {rules_file}")
     else:
         guidance = load_current_rules(task_name)
-        print("  No initialized guidance found, using reference rules")
+        if guidance:
+            print("  No initialized guidance found, using reference rules")
+        else:
+            print("  [warn] No guidance found — run 'initialize' first")
+            guidance = {}
 
     st = state_io.load(out_dir)
     start_round = max(st.get("round", 1), 1)
 
-    all_queries = load_queries(task_name, split="evolve")  # Q_evol only
+    # Load all queries and split into Q_evol / Q_test at runtime
+    all_queries = load_all_queries(task_name)
     if not all_queries:
-        print("  [error] No Q_evol queries found — run utils/prepare_data.py first")
+        print("  [error] No queries found under data/evolve/<task>/")
         return
-    print(f"  Q_evol queries: {len(all_queries)}")
+
+    q_evol, q_test = _split_queries(all_queries, skill_name)
+    print(f"  All queries: {len(all_queries)} | Q_evol: {len(q_evol)} | Q_test: {len(q_test)}")
+
+    # Save the split for reproducibility
+    split_file = out_dir / "query_split.json"
+    if not split_file.exists():
+        split_file.write_text(json.dumps({
+            "skill": skill_name,
+            "seed": hash(skill_name) & 0xFFFFFFFF,
+            "n_evol": len(q_evol),
+            "n_test": len(q_test),
+        }, indent=2), encoding="utf-8")
 
     for round_num in range(start_round, start_round + num_rounds):
-        print(f"\n--- Round {round_num} ---")
+        print(f"\n--- Round {round_num} {'(baseline — guidance skeleton only)' if round_num == 1 else ''} ---")
+
+        # Sample queries_per_round from Q_evol for this round (rotate through)
         offset = (round_num - 1) * queries_per_round
-        selected = [all_queries[(offset + i) % len(all_queries)]
-                    for i in range(queries_per_round)]
+        selected = [q_evol[(offset + i) % len(q_evol)] for i in range(queries_per_round)]
 
         work_dir = out_dir / f"round_{round_num:02d}" / "trials"
         print(f"  Running {len(selected)} trials ...")
@@ -192,6 +257,67 @@ def self_evolving_stage(task_name: str, num_rounds: int, queries_per_round: int,
             json.dumps(guidance, indent=2, ensure_ascii=False), encoding="utf-8")
         _record_round(out_dir, round_num, "evolve", traces, diff_log)
 
+    _print_summary(task_name, st)
+
+
+# ---------------------------------------------------------------------------
+# Evaluation on Q_test
+# ---------------------------------------------------------------------------
+
+def evaluate_stage(task_name: str, dry_run: bool = False) -> None:
+    """Run the final evolved guidance on Q_test (held-out) and report success rate."""
+    print(f"\n{'='*60}\nEvaluation on Q_test: {task_name}\n{'='*60}")
+    skill_name = get_skill_name(task_name)
+    out_dir = config.OUTPUT_DIR / skill_name
+
+    rules_file = out_dir / "rules.json"
+    if not rules_file.exists():
+        print("  [error] No evolved guidance found — run 'evolve' first")
+        return
+    guidance = json.loads(rules_file.read_text(encoding="utf-8"))
+
+    all_queries = load_all_queries(task_name)
+    _, q_test = _split_queries(all_queries, skill_name)
+    print(f"  Q_test: {len(q_test)} queries (held-out, never used during evolving)")
+
+    work_dir = out_dir / "evaluation" / "trials"
+    traces = collect_traces(task_name, guidance, q_test, work_dir, dry_run=dry_run)
+
+    if not dry_run and traces:
+        rewards = [t.reward for t in traces]
+        mean_r = sum(rewards) / len(rewards)
+        n_ok = sum(t.success for t in traces)
+        print(f"\n  Q_test result: {mean_r:.2f} ({n_ok}/{len(traces)} pass)")
+
+        st = state_io.load(out_dir)
+        st.setdefault("eval_history", []).append({
+            "n_traces": len(traces), "mean_reward": mean_r,
+            "n_success": n_ok, "n_fail": len(traces) - n_ok,
+        })
+        state_io.save(out_dir, st)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _print_summary(task_name: str, state: dict) -> None:
+    history = state.get("reward_history", [])
+    if not history:
+        return
+    print(f"\n{'='*60}\nSkillSentry Summary: {task_name}\n{'='*60}")
+    print(f"  {'Rnd':<5} {'Stage':<15} {'Reward':<8} {'Pass%':<7} {'Changes'}")
+    print(f"  {'---':<5} {'-----':<15} {'------':<8} {'-----':<7} {'-------'}")
+    for h in history:
+        n = h.get("n_traces", 0)
+        n_ok = h.get("n_success", 0)
+        label = "(baseline)" if h["round"] == 1 else ""
+        print(f"  {h['round']:<5} {h['mode']:<15} {h['mean_reward']:<8.2f} "
+              f"{n_ok/n*100 if n else 0:<6.0f}%  {h['n_field_changes']} {label}")
+    best = max(history, key=lambda h: h.get("mean_reward", 0))
+    print(f"\n  Best: Round {best['round']} — reward={best['mean_reward']:.2f}")
+    print(f"{'='*60}")
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -203,35 +329,34 @@ def main() -> None:
         description="SkillSentry guidance generation (Initialization + Self-Evolving stages)")
     parser.add_argument("--task", required=True, help="Task name (e.g. econ-detrending-correlation)")
     parser.add_argument("--mode", default="initialize",
-                        choices=["initialize", "evolve", "bootstrap", "iterate"],
-                        help="'initialize' (§III-B+§III-C) or 'evolve' (self-evolving loop); "
-                             "'bootstrap'/'iterate' are accepted aliases")
-    parser.add_argument("--rounds", type=int, default=3, help="Self-evolving rounds")
-    parser.add_argument("--queries-per-round", type=int, default=5, help="Trials per round")
-    parser.add_argument("--dry-run", action="store_true", help="Skip LLM calls and trial runs")
-    parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--dataset-root", default=None)
+                        choices=["initialize", "evolve", "evaluate"],
+                        help="'initialize' (§III-B) | 'evolve' (§III-C) | 'evaluate' (Q_test)")
+    parser.add_argument("--rounds", type=int, default=10, help="Self-evolving rounds (evolve mode)")
+    parser.add_argument("--queries-per-round", type=int, default=5,
+                        help="Queries sampled per round from Q_evol (default: 5)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Skip LLM calls and harbor runs")
+    parser.add_argument("--output-dir", default=None,
+                        help="Override OUTPUT_DIR (data/results/evolve)")
     args = parser.parse_args()
 
     if args.output_dir:
         config.OUTPUT_DIR = Path(args.output_dir)
-    if args.dataset_root:
-        config.DATASET_ROOT = Path(args.dataset_root)
 
     if not config.LLM_API_KEY and not args.dry_run:
         print("[error] LLM_API_KEY / OPENAI_API_KEY not set", file=sys.stderr)
         sys.exit(1)
 
-    print(f"LLM model:   {config.LLM_MODEL}")
-    print(f"Agent:       {config.HARBOR_AGENT} / {config.HARBOR_MODEL}")
-    print(f"Output dir:  {config.OUTPUT_DIR}")
+    print(f"SkillSentry | model: {config.LLM_MODEL} | output: {config.OUTPUT_DIR}")
 
-    mode = {"bootstrap": "initialize", "iterate": "evolve"}.get(args.mode, args.mode)
-    if mode == "initialize":
+    if args.mode == "initialize":
         initialize_stage(args.task, dry_run=args.dry_run)
-    else:
+    elif args.mode == "evolve":
         self_evolving_stage(args.task, num_rounds=args.rounds,
-                            queries_per_round=args.queries_per_round, dry_run=args.dry_run)
+                            queries_per_round=args.queries_per_round,
+                            dry_run=args.dry_run)
+    elif args.mode == "evaluate":
+        evaluate_stage(args.task, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

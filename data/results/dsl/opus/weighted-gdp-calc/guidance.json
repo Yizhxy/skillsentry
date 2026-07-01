@@ -1,0 +1,119 @@
+{
+  "skill": "weighted-gdp-calc",
+  "steps": [
+    {
+      "stepId": "choose_tool",
+      "description": "Choose appropriate tool: pandas for data analysis, openpyxl for formulas and formatting",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "openpyxl" },
+        { "tool": "pandas" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "import.*pandas|import.*openpyxl|from.*pandas|from.*openpyxl" },
+            { "tool": "Write", "input_match": { "content": "import pandas|import openpyxl|from pandas|from openpyxl" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "load_or_create",
+      "description": "Load existing workbook or create new one",
+      "depends_on": ["choose_tool"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "\\.xlsx$" },
+            { "tool": "Bash", "command_match": "pd\\.read_excel|openpyxl\\.load_workbook|load_workbook|Workbook\\(" },
+            { "tool": "Write", "input_match": { "content": "pd\\.read_excel|load_workbook|Workbook\\(" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "modify_content",
+      "description": "Modify spreadsheet content using dynamic Excel formulas — no hardcoded computed values",
+      "depends_on": ["load_or_create"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "ws\\[|sheet\\[|\\.cell\\(|=['\"]=" },
+            { "tool": "Write", "input_match": { "content": "ws\\[|sheet\\[|\\.cell\\(|=['\"]=" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "sheet\\[['\"][A-Z]+\\d+['\"]\\]\\s*=\\s*[\\d\\.]+\\s*$" },
+          "reason": "❌ CRITICAL: Never hardcode computed values. Use Excel formulas (e.g., '=SUM(A1:A10)') so the spreadsheet remains dynamic."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use Excel formulas (=VLOOKUP, =INDEX/MATCH, =SUMPRODUCT) — compute in Excel, not Python.",
+          "For stats across multiple columns, create separate formulas per column rather than one spanning range."
+        ]
+      }
+    },
+    {
+      "stepId": "save_workbook",
+      "description": "Save the workbook to file",
+      "depends_on": ["modify_content"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "\\.save\\(|wb\\.save|to_excel\\(" },
+            { "tool": "Write", "input_match": { "content": "\\.save\\(|wb\\.save|to_excel\\(" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "recalculate_formulas",
+      "description": "Recalculate formulas using recalc.py (mandatory if formulas were used)",
+      "depends_on": ["save_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "recalc\\.py|python.*recalc|libreoffice.*--headless.*--calc" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "verify_errors",
+      "description": "Verify and fix any formula errors from recalc output — re-run until no errors remain",
+      "depends_on": ["recalculate_formulas"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "recalc\\.py" },
+            { "tool": "Read", "path_match": "\\.xlsx$" }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Bash",
+          "command_match": "recalc\\.py.*&&.*echo.*success|recalc\\.py.*&&.*exit",
+          "reason": "❌ Always read the recalc.py JSON output to verify 'status: success' and 'total_errors: 0' — never assume success."
+        }
+      ]
+    }
+  ],
+  "termination": ["save_workbook", "recalculate_formulas"]
+}

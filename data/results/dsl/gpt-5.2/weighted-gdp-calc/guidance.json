@@ -1,0 +1,150 @@
+{
+  "skill": "weighted-gdp-calc",
+  "steps": [
+    {
+      "stepId": "choose_tool",
+      "description": "Choose appropriate tool: pandas for data analysis, openpyxl for formulas",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "openpyxl" },
+        { "tool": "pandas" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "import.*pandas|import.*openpyxl" },
+            { "tool": "Write", "input_match": { "content": "import pandas|import openpyxl|from pandas|from openpyxl" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "inspect_data_structure",
+      "description": "Thoroughly inspect the Data sheet to understand row layout, series codes, and year columns",
+      "depends_on": ["choose_tool"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "\\.xlsx$" },
+            { "tool": "Bash", "command_match": "pd\\.read_excel|openpyxl.*load|load_workbook" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Before writing any formulas, print a sample of the Data sheet: identify the exact row numbers for each series code and the column letters for each year.",
+          "Verify which rows correspond to Exports (BXGS), Imports (BMGS), and GDP (NGDPD) for each country."
+        ],
+        "warnings": [
+          "The single most common failure is incorrect INDEX/MATCH ranges — wrong row ranges produce values off by orders of magnitude (e.g., 25 instead of 404). Verify all ranges before writing formulas."
+        ]
+      }
+    },
+    {
+      "stepId": "load_or_create",
+      "description": "Load the existing workbook for modification",
+      "depends_on": ["inspect_data_structure"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "load_workbook|Workbook\\(" },
+            { "tool": "Write", "input_match": { "content": "load_workbook|Workbook\\(" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "modify_content",
+      "description": "Write INDEX/MATCH lookup formulas for all three data blocks, then statistics and weighted mean",
+      "depends_on": ["load_or_create"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "INDEX.*MATCH|ws\\[|sheet\\[|\\.cell\\(|=['\"]=" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "sheet\\[['\"][A-Z]+\\d+['\"]\\]\\s*=\\s*[\\d\\.]+\\s*$" },
+          "reason": "❌ CRITICAL: Never hardcode computed values. Use Excel formulas like '=INDEX(Data!$H$21:$M$40, MATCH(D12, Data!$B$21:$B$40, 0), MATCH(H9, Data!$H$4:$M$4, 0))' so the lookup is dynamic."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use INDEX/MATCH with exact row/column ranges: INDEX(Data!$H$<start>:$M$<end>, MATCH(series_code_cell, Data!$B$<start>:$B$<end>, 0), MATCH(year_cell, Data!$H$4:$M$4, 0)).",
+          "Double-check the Data row ranges for each block (Exports rows 21–26, Imports rows 28–33, GDP rows 35–40) — wrong ranges produce values off by 10x–100x."
+        ],
+        "warnings": [
+          "Verify ranges match actual Data sheet structure by checking sample values before writing all 30 formulas."
+        ]
+      }
+    },
+    {
+      "stepId": "save_workbook",
+      "description": "Save the workbook to file",
+      "depends_on": ["modify_content"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "\\.save\\(|wb\\.save" },
+            { "tool": "Write", "input_match": { "content": "\\.save\\(|wb\\.save" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "recalculate_formulas",
+      "description": "Recalculate formulas using recalc.py",
+      "depends_on": ["save_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "recalc\\.py|python.*recalc|libreoffice.*--headless" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "verify_errors",
+      "description": "Verify recalc output and spot-check lookup values against known expected values",
+      "depends_on": ["recalculate_formulas"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "recalc\\.py" },
+            { "tool": "Read", "path_match": "\\.xlsx$" }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Bash",
+          "command_match": "recalc\\.py.*&&.*echo.*success|recalc\\.py.*&&.*exit",
+          "reason": "❌ Read the recalc.py JSON output — check 'status' and 'total_errors'. If errors_found, fix and re-run."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Spot-check: H12 (UAE Exports 2019) should be ~404. If you see ~25, the MATCH lookup is hitting the wrong rows — fix the range.",
+          "Confirm recalc shows 'status: success' and 'total_errors: 0' before finishing."
+        ]
+      }
+    }
+  ],
+  "termination": ["save_workbook", "recalculate_formulas"]
+}

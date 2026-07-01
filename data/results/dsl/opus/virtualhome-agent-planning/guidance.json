@@ -1,0 +1,103 @@
+{
+  "skill": "pddl-skills",
+  "steps": [
+    {
+      "stepId": "load_problem",
+      "description": "Load PDDL domain and problem files using unified_planning PDDLReader",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "unified_planning" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "\\.pddl$" },
+            { "tool": "Bash", "command_match": "cat.*\\.pddl" },
+            { "tool": "Write", "input_match": { "content": "PDDLReader|parse_problem|load_problem" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use unified_planning.io.PDDLReader().parse_problem(domain_path, problem_path) to load both files."
+        ]
+      }
+    },
+    {
+      "stepId": "generate_plan",
+      "description": "Generate a plan using OneshotPlanner with pyperplan",
+      "depends_on": ["load_problem"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "OneshotPlanner|generate_plan|pyperplan|planner\\.solve" } },
+            { "tool": "Bash", "command_match": "python.*plan|pyperplan" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use OneshotPlanner(name='pyperplan').solve(problem) and handle the case where no plan is found."
+        ]
+      }
+    },
+    {
+      "stepId": "validate_plan",
+      "description": "Validate plan correctness using SequentialPlanValidator",
+      "depends_on": ["generate_plan"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "PlanValidator|SequentialPlanValidator|validate|is_valid" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "save_plan",
+      "description": "Save the validated plan to disk in correct PDDL format using PDDLWriter",
+      "depends_on": ["validate_plan"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "PDDLWriter|write_plan" } },
+            { "tool": "Bash", "command_match": ".*>.*\\.(plan|txt)" }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "f\\.write\\(str\\(action\\)" },
+          "reason": "❌ str(action) produces wrong PDDL format 'action(args)' instead of '(action args)'. Use PDDLWriter.write_plan() instead."
+        },
+        {
+          "tool": "Write",
+          "input_match": { "content": "with open\\([^)]*\\.(plan|txt)[^)]*['\"],\\s*['\"]w" },
+          "reason": "❌ Manually writing plan files bypasses PDDLWriter and produces incorrect PDDL syntax. Use PDDLWriter.write_plan() instead."
+        },
+        {
+          "tool": "Bash",
+          "command_match": "echo.*>.*\\.(plan|txt)",
+          "reason": "❌ Using echo to write plan files produces invalid PDDL format. Use PDDLWriter.write_plan() instead."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use unified_planning.io.PDDLWriter().write_plan(plan, output_path) — this is the only safe way to produce valid PDDL action syntax '(action arg1 arg2)'."
+        ],
+        "warnings": [
+          "PDDLWriter may emit comment lines (e.g., '; sequential plan') in the output — verify the verifier accepts or strip them if required."
+        ]
+      }
+    }
+  ],
+  "termination": ["load_problem", "generate_plan", "save_plan"]
+}
