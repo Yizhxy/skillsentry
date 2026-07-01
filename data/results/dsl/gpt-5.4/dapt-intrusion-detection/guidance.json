@@ -1,0 +1,106 @@
+{
+  "skill": "pcap-analysis",
+  "steps": [
+    {
+      "stepId": "load_pcap_and_basic_counts",
+      "description": "Load PCAP file using scapy and extract basic packet counts by protocol",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "scapy" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "rdpcap|sniff|scapy|TCP|UDP|ICMP" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "calc_time_series_metrics",
+      "description": "Calculate duration, packets per minute, and inter-arrival times (IAT)",
+      "depends_on": ["load_pcap_and_basic_counts"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "iat|inter.*arrival|packets_per_min|duration" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "calc_size_statistics",
+      "description": "Compute total bytes, average/min/max packet size",
+      "depends_on": ["load_pcap_and_basic_counts"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "len\\(pkt\\)|packet.*size|bytes|avg.*size" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "calc_entropy_metrics",
+      "description": "Calculate Shannon entropy for src/dst IPs and ports",
+      "depends_on": ["load_pcap_and_basic_counts"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "entropy|shannon|scipy\\.stats" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "build_ip_graph",
+      "description": "Build directed IP graph — nodes, edges, density, max in/out degree",
+      "depends_on": ["calc_entropy_metrics"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "networkx|DiGraph|nx\\.add_edge|in_degree|out_degree" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "detect_security_patterns",
+      "description": "Detect port scanning, DoS, and beaconing patterns",
+      "depends_on": ["build_ip_graph", "calc_time_series_metrics"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "port.*scan|syn.*ratio|DoS|beaconing" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "write_csv_output",
+      "description": "Write all metrics to CSV preserving existing comment lines",
+      "depends_on": ["detect_security_patterns", "calc_size_statistics"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "to_csv|csv\\.writer|open.*\\.csv" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["detect_security_patterns", "write_csv_output"]
+}

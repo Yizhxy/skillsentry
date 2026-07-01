@@ -1,0 +1,118 @@
+{
+  "skill": "protein-expression-analysis",
+  "steps": [
+    {
+      "stepId": "choose_tool",
+      "description": "Choose tool: pandas for data inspection, openpyxl for formulas/formatting",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "openpyxl" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "import openpyxl|import pandas|from openpyxl" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "load_workbook",
+      "description": "Load existing workbook and inspect all sheets",
+      "depends_on": ["choose_tool"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "load_workbook|pd\\.read_excel" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "data_only\\s*=\\s*True" },
+          "reason": "⚠️ Never save a workbook loaded with data_only=True — all formulas will be replaced with static values."
+        }
+      ]
+    },
+    {
+      "stepId": "fill_expression_data",
+      "description": "Step 1 — Fill expression data cells (≥80/100 cells required)",
+      "depends_on": ["load_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "ws\\[|\\.cell\\(|=['\"]=" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Fill all target expression cells — the verifier requires at least 80/100 cells to be filled."
+        ]
+      }
+    },
+    {
+      "stepId": "calculate_statistics",
+      "description": "Step 2 — Calculate statistics (mean, std, CV) for each protein",
+      "depends_on": ["fill_expression_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "AVERAGE|STDEV|=['\"]=(AVERAGE|STDEV|CV)" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "calculate_fold_changes",
+      "description": "Step 3 — Calculate fold changes relative to control",
+      "depends_on": ["calculate_statistics"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "fold.*change|FC|ratio|control" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "save_workbook",
+      "description": "Save workbook to file",
+      "depends_on": ["calculate_fold_changes"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "\\.save\\(|wb\\.save" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "recalculate_formulas",
+      "description": "Recalculate formulas using recalc.py",
+      "depends_on": ["save_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "recalc\\.py|python.*recalc" }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["fill_expression_data", "calculate_statistics", "calculate_fold_changes", "recalculate_formulas"]
+}

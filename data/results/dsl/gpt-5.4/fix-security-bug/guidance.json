@@ -1,0 +1,97 @@
+{
+  "skill": "jackson-security",
+  "steps": [
+    {
+      "stepId": "locate_entry_point",
+      "description": "Locate the Jackson deserialization entry point (readValue()) in the source code",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "grep.*readValue|grep.*deserializ|find.*java" },
+            { "tool": "Read", "path_match": "\\.java$" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "understand_attack_surface",
+      "description": "Understand the empty key attack vector — must validate BEFORE readValue()",
+      "depends_on": ["locate_entry_point"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "empty.*key|\"\"|pre.*deserializ|attack|malicious" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "warnings": [
+          "Post-deserialization validation is INSUFFICIENT — inspect and reject the raw JSON string BEFORE calling readValue()."
+        ]
+      }
+    },
+    {
+      "stepId": "implement_pre_deserialization_validation",
+      "description": "Implement pre-deserialization validation on the raw JSON string before readValue()",
+      "depends_on": ["understand_attack_surface"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "pre.*deserializ|validate.*json|check.*json|empty.*key.*throw" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "create_patch_files",
+      "description": "Create .patch files for all modified source files",
+      "depends_on": ["implement_pre_deserialization_validation"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "git.*diff|diff.*orig|patch" },
+            { "tool": "Write", "path_match": "\\.patch$" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "rebuild_project",
+      "description": "Apply patches and rebuild with Maven",
+      "depends_on": ["create_patch_files"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "mvn.*compile|mvn.*build|git.*apply" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "verify_fix",
+      "description": "Verify fix blocks the exploit while preserving legitimate deserialization",
+      "depends_on": ["rebuild_project"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "mvn.*test|curl.*exploit" }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["implement_pre_deserialization_validation", "create_patch_files", "rebuild_project"]
+}

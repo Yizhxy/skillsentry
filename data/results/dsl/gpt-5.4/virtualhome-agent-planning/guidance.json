@@ -1,0 +1,76 @@
+{
+  "skill": "pddl-skills",
+  "steps": [
+    {
+      "stepId": "load_problem",
+      "description": "Load PDDL domain and problem files using unified_planning PDDLReader",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "unified_planning" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "PDDLReader|parse_problem|load_problem" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "generate_plan",
+      "description": "Generate a plan using OneshotPlanner with pyperplan",
+      "depends_on": ["load_problem"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "OneshotPlanner|generate_plan|pyperplan|planner\\.solve" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "validate_plan",
+      "description": "Validate plan correctness using SequentialPlanValidator",
+      "depends_on": ["generate_plan"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "PlanValidator|SequentialPlanValidator|validate" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "save_plan",
+      "description": "Save the validated plan using PDDLWriter in correct PDDL format",
+      "depends_on": ["validate_plan"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "PDDLWriter|write_plan" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "f\\.write\\(str\\(action\\)" },
+          "reason": "❌ str(action) produces 'action(args)' format. Use PDDLWriter.write_plan() for correct '(action args)' format."
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "Use unified_planning.io.PDDLWriter().write_plan(plan, output_path) to guarantee correct PDDL plan format."
+        ]
+      }
+    }
+  ],
+  "termination": ["load_problem", "generate_plan", "save_plan"]
+}

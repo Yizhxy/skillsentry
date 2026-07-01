@@ -1,0 +1,88 @@
+{
+  "skill": "glm-calibration",
+  "steps": [
+    {
+      "stepId": "read_config_and_data",
+      "description": "Read glm3.nml configuration and inspect observation data structure",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "glm3\\.nml" },
+            { "tool": "Bash", "command_match": "cat.*glm3\\.nml|read.*nml" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "run_baseline_glm",
+      "description": "Run GLM with default parameters and verify output file is produced",
+      "depends_on": ["read_config_and_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "\\bglm\\b|glm3|run.*glm" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "process_output_and_calc_rmse",
+      "description": "Read output.nc, convert height-to-depth (depth = lake_depth - z), merge with observations, compute RMSE",
+      "depends_on": ["run_baseline_glm"],
+      "constraints": [
+        { "parameter": "depth conversion", "requirement": "depth = lake_depth - z (NOT z directly)" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "output\\.nc|netCDF4|Dataset|rmse|RMSE" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "depth\\s*=\\s*z\\b" },
+          "reason": "❌ GLM z is height from lake bottom. Correct: depth = lake_depth - z."
+        }
+      ]
+    },
+    {
+      "stepId": "calibrate_parameters",
+      "description": "Adjust parameters (Kw, coef_mix_hyp, wind_factor, lw_factor, ch) to minimize RMSE < 2.0°C",
+      "depends_on": ["process_output_and_calc_rmse"],
+      "constraints": [
+        { "parameter": "RMSE target", "requirement": "must be < 2.0°C" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "Kw|coef_mix_hyp|wind_factor|lw_factor|minimize|Nelder" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "save_final_params",
+      "description": "Save calibrated parameters to glm3.nml",
+      "depends_on": ["calibrate_parameters"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "glm3\\.nml|modify_nml" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["run_baseline_glm", "process_output_and_calc_rmse", "calibrate_parameters", "save_final_params"]
+}

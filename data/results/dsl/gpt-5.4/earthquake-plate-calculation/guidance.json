@@ -1,0 +1,112 @@
+{
+  "skill": "geospatial-analysis",
+  "steps": [
+    {
+      "stepId": "load_geospatial_data",
+      "description": "Load earthquake and plate boundary GeoJSON data with geopandas",
+      "depends_on": [],
+      "constraints": [
+        { "tool": "geopandas" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "gpd\\.read_file|geopandas\\.read_file" },
+            { "tool": "Write", "input_match": { "content": "gpd\\.read_file|geopandas\\.read_file|read_file" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "create_geodataframe",
+      "description": "Create a GeoDataFrame from earthquake coordinate data with EPSG:4326 CRS",
+      "depends_on": ["load_geospatial_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "GeoDataFrame|Point\\(|crs.*4326|EPSG.*4326" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "spatial_filter",
+      "description": "Filter earthquakes within Pacific plate using .within() on its .unary_union polygon",
+      "depends_on": ["create_geodataframe"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "\\.within\\(|unary_union|Pacific" } }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "pacific_poly = gdf_plates[gdf_plates['PlateName'] == 'Pacific'].geometry.unary_union"
+        ]
+      }
+    },
+    {
+      "stepId": "project_to_metric_crs",
+      "description": "Project to EPSG:4087 before distance calculations",
+      "depends_on": ["spatial_filter"],
+      "constraints": [
+        { "parameter": "CRS", "requirement": "EPSG:4087" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "to_crs|EPSG.*4087|4087" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "haversine|math\\.sin.*lat|math\\.cos.*lat" },
+          "reason": "⚠️ Use .to_crs('EPSG:4087') + .distance() instead of manual Haversine."
+        }
+      ],
+      "on_enter": {
+        "warnings": [
+          "Project BOTH earthquakes AND boundaries to EPSG:4087 before .distance()."
+        ]
+      }
+    },
+    {
+      "stepId": "calculate_distances",
+      "description": "Calculate distances from earthquakes to Pacific plate boundaries",
+      "depends_on": ["project_to_metric_crs"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "\\.distance\\(|distance_km|distance_m" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "find_extreme_and_output",
+      "description": "Identify furthest earthquake with .nlargest() and write output JSON",
+      "depends_on": ["calculate_distances"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "nlargest|idxmax|furthest|json\\.dump" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["spatial_filter", "project_to_metric_crs", "calculate_distances", "find_extreme_and_output"]
+}

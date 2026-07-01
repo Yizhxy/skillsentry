@@ -1,0 +1,97 @@
+{
+  "skill": "mesh-analysis",
+  "steps": [
+    {
+      "stepId": "parse_stl_binary",
+      "description": "Parse binary STL file — read header, triangle normals/vertices, and Attribute Byte Count for Material ID",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "struct\\.unpack|open.*rb|read.*stl|binary.*stl" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "import trimesh|import stl|mesh\\.load" },
+          "reason": "⚠️ Do not use trimesh/numpy-stl — the Material ID in Attribute Byte Count is discarded by these libraries. Parse binary format directly."
+        }
+      ]
+    },
+    {
+      "stepId": "build_connectivity_graph",
+      "description": "Build triangle adjacency graph by shared edges to identify connected components",
+      "depends_on": ["parse_stl_binary"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "adjacency|connected.*component|union_find|shared.*edge" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "filter_largest_component",
+      "description": "Identify and keep the largest connected component",
+      "depends_on": ["build_connectivity_graph"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "largest.*component|max.*len.*component|nlargest" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "compute_volume",
+      "description": "Compute mesh volume using signed volume formula",
+      "depends_on": ["filter_largest_component"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "signed.*volume|divergence.*theorem|cross.*dot|volume.*sum" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "lookup_material_density",
+      "description": "Look up material density from material_density_table.md using the Material ID",
+      "depends_on": ["parse_stl_binary"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "material_density_table\\.md$" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "compute_mass_and_save",
+      "description": "Compute mass = volume × density with correct unit conversions and save to mass_report.json",
+      "depends_on": ["compute_volume", "lookup_material_density"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "mass_report|mass.*json|json\\.dump.*mass" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["filter_largest_component", "compute_volume", "lookup_material_density", "compute_mass_and_save"]
+}

@@ -1,0 +1,92 @@
+{
+  "skill": "d3-visualization",
+  "steps": [
+    {
+      "stepId": "load_and_parse_data",
+      "description": "Load and parse stock data from CSV files",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "d3\\.csv|readFileSync.*csv|d3\\.csvParse" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "vendor_d3_offline",
+      "description": "Vendor D3 locally — do not load from CDN",
+      "depends_on": ["load_and_parse_data"],
+      "constraints": [
+        { "parameter": "D3 version", "requirement": "pin to d3@7.9.0 and vendor locally" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "vendor.*d3|d3\\.v7.*min\\.js|src.*vendor" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "cdn\\.jsdelivr\\.net|unpkg\\.com.*d3|cdnjs\\.cloudflare.*d3" },
+          "reason": "❌ Do not use CDN — the task environment has no network. Vendor a pinned local D3 bundle."
+        }
+      ]
+    },
+    {
+      "stepId": "create_visualization",
+      "description": "Create bubble chart with D3 force simulation",
+      "depends_on": ["load_and_parse_data"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "d3\\.forceSimulation|d3\\.forceManyBody|d3\\.forceCollide|bubble|circle" } }
+          ]
+        }
+      ],
+      "failure_patterns": [
+        {
+          "tool": "Write",
+          "input_match": { "content": "Math\\.random\\(\\)" },
+          "reason": "❌ Do not use Math.random() — output must be deterministic."
+        }
+      ]
+    },
+    {
+      "stepId": "add_interactivity",
+      "description": "Add tooltips on hover, click handlers, bidirectional table linking",
+      "depends_on": ["create_visualization"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "mouseover|tooltip|click.*handler|on\\('click" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "export_standalone_html",
+      "description": "Export as standalone HTML with all assets vendored",
+      "depends_on": ["add_interactivity", "vendor_d3_offline"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "path_match": "\\.html$" }
+          ]
+        }
+      ]
+    }
+  ],
+  "termination": ["create_visualization", "vendor_d3_offline", "export_standalone_html"]
+}

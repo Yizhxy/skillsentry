@@ -1,0 +1,109 @@
+{
+  "skill": "powerlifting-coef-calc",
+  "steps": [
+    {
+      "stepId": "read_task_requirements",
+      "description": "Read the task carefully — identify ALL required output sheets and their structure before writing any code",
+      "depends_on": [],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Read", "path_match": "instruction\\.md$|task\\.md$|README" }
+          ]
+        }
+      ],
+      "on_enter": {
+        "suggestions": [
+          "List ALL required output sheet names before writing any code — an empty sheet fails all tests for that sheet."
+        ]
+      }
+    },
+    {
+      "stepId": "choose_tool",
+      "description": "Choose tool: pandas for inspection, openpyxl for formulas/formatting",
+      "depends_on": ["read_task_requirements"],
+      "constraints": [
+        { "tool": "openpyxl" }
+      ],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "import openpyxl|import pandas|from openpyxl|from pandas" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "load_workbook",
+      "description": "Load existing workbook or create a new one",
+      "depends_on": ["choose_tool"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "load_workbook|Workbook\\(" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "modify_workbook",
+      "description": "Write Excel formulas to ALL required sheets",
+      "depends_on": ["load_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "ws\\[|sheet\\[|\\.cell\\(|=['\"]=" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "save_workbook",
+      "description": "Save workbook to the output .xlsx file",
+      "depends_on": ["modify_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Write", "input_match": { "content": "\\.save\\(|wb\\.save" } }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "recalculate_formulas",
+      "description": "Recalculate all formulas using recalc.py",
+      "depends_on": ["save_workbook"],
+      "constraints": [],
+      "logical_actions": [
+        {
+          "actionId": 1,
+          "patterns": [
+            { "tool": "Bash", "command_match": "recalc\\.py|python.*recalc" }
+          ]
+        }
+      ]
+    },
+    {
+      "stepId": "verify_output",
+      "description": "Verify recalc output — confirm ALL required sheets are populated",
+      "depends_on": ["recalculate_formulas"],
+      "constraints": [],
+      "logical_actions": [],
+      "on_enter": {
+        "suggestions": [
+          "Check recalc.py output for 'status: success' and 'total_errors: 0'."
+        ]
+      }
+    }
+  ],
+  "termination": ["save_workbook", "recalculate_formulas", "verify_output"]
+}
