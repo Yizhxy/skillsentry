@@ -21,7 +21,7 @@ def call(messages: list[dict], temperature: float = 0.3,
          json_mode: bool = False) -> str:
     client = _get_client()
 
-    # Do not use response_format to avoid v3.cm triggering tool_calls mode in json_mode
+    # Do not use response_format because some OpenAI-compatible providers switch to tool_calls mode in json_mode
     # Instead, append JSON requirement at the end of the user message
     if json_mode and config.JSON_MODE:
         msgs = [m.copy() for m in messages]

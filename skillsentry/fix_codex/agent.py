@@ -67,7 +67,7 @@ class PatchedCodexAgent(Codex):
 
         model = self.model_name.split("/")[-1]
 
-        # Support V_API_KEY for third-party providers (e.g. api.v3.cm)
+        # Support V_API_KEY for third-party providers (OpenAI-compatible endpoints)
         # _extra_env comes from job yaml agents.env — check it first, then os.environ
         extra = getattr(self, "_extra_env", {})
         api_key = (

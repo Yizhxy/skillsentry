@@ -98,12 +98,12 @@ The first run builds the image in about 5 minutes (mainly `npm install codex`); 
 
 ## API Configuration
 
-This project uses a third-party OpenAI-compatible API (`api.v3.cm`). Configure the following two parameters:
+SkillSentry works with any OpenAI-compatible API. Configure the following two parameters:
 
 | Parameter | Description | Example |
 |-----------|-------------|---------|
 | `V_API_KEY` / `OPENAI_API_KEY` | API key; set both to the same value | `sk-xxxxxxxx` |
-| `OPENAI_BASE_URL` | API endpoint, append `/v1` | `https://api.v3.cm/v1` |
+| `OPENAI_BASE_URL` | API endpoint, append `/v1` | `https://api.example.com/v1` |
 
 **Configure in job yaml** (recommended; each job configured independently):
 
@@ -115,7 +115,7 @@ agents:
     env:
       V_API_KEY: "sk-your-key-here"
       OPENAI_API_KEY: "sk-your-key-here"
-      OPENAI_BASE_URL: "https://api.v3.cm/v1"
+      OPENAI_BASE_URL: "https://api.example.com/v1"
 ```
 
 **Or pass via environment variables** (overrides at runtime):
@@ -274,7 +274,7 @@ agents:
     env:
       V_API_KEY: "sk-your-key"
       OPENAI_API_KEY: "sk-your-key"
-      OPENAI_BASE_URL: "https://api.v3.cm/v1"
+      OPENAI_BASE_URL: "https://api.example.com/v1"
       CODEX_HOOKS_CONFIG: "/path/to/hooks.json"      # Optional; enables hooks
 
 tasks:
