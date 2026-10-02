@@ -1,4 +1,4 @@
-Please use D3.js (v6) to visualize input data stored at `/root/data/stock-descriptions.csv` and `/root/data/indiv-stock/`.
+The task is to use D3.js (v6) in order to visualize input data stored at `/root/data/stock-descriptions.csv` and `/root/data/indiv-stock/`.
 Please return the output as a single-page web app at `/root/output/index.html`.
 Generate:
 - `/root/output/js/d3.v6.min.js`

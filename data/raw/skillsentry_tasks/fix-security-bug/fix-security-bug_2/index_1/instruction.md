@@ -1,6 +1,6 @@
-A vulnerability has been found in Apache Druid version 0.20.0: authenticated attackers can execute arbitrary code on the server through malicious JavaScript payloads.
+A security flaw has been discovered in Apache Druid version 0.20.0: authenticated attackers are able to run arbitrary code on the server by means of malicious JavaScript payloads.
 
-The exploit uses an empty key `""` in the filter configuration to bypass JavaScript security settings:
+The exploit relies on an empty key `""` in the filter configuration to circumvent JavaScript security settings:
 
 ```http
 POST /druid/indexer/v1/sampler HTTP/1.1
@@ -26,23 +26,23 @@ Content-Type: application/json
 
 **Variant: Patch + Write Unit Test**
 
-Fix the vulnerability AND write a JUnit unit test that verifies the patch blocks the exploit.
+Resolve the vulnerability AND author a JUnit unit test that confirms the patch blocks the exploit.
 
-**Fix approach:** Patch the source code AND write a unit test.
-1. Write patch files in `/root/patches/` that block the exploit.
+**Fix approach:** Patch the source code AND author a unit test.
+1. Produce patch files in `/root/patches/` that stop the exploit.
 2. Apply the patches to `/root/druid/`.
-3. Write a JUnit test in `/root/druid/indexing-service/src/test/java/org/apache/druid/indexing/common/task/TestJavaScriptSecurityPatch.java` that:
-   - Sends a mock request with the empty-key JavaScript bypass
-   - Verifies it is blocked (exception thrown or filtered)
-4. Rebuild with the command below.
+3. Author a JUnit test in `/root/druid/indexing-service/src/test/java/org/apache/druid/indexing/common/task/TestJavaScriptSecurityPatch.java` that:
+   - Submits a mock request with the empty-key JavaScript bypass
+   - Confirms it is blocked (exception thrown or filtered)
+4. Rebuild using the command below.
 
-Build command (skip web-console to avoid OOM, skip code quality checks for patched files):
+Build command (skip web-console to prevent OOM, skip code quality checks for patched files):
 ```bash
 cd /root/druid
 mvn clean package -DskipTests -Dcheckstyle.skip=true -Dpmd.skip=true -Dforbiddenapis.skip=true -Dspotbugs.skip=true -Danimal.sniffer.skip=true -Denforcer.skip=true -Djacoco.skip=true -Ddependency-check.skip=true -pl '!web-console' -pl indexing-service -am
 ```
 
-The verifier will deploy the patched JAR and restart Druid before running tests.
-**IMPORTANT: Your fix must block all such exploit requests while ensuring that legitimate requests continue to function correctly.**
+The verifier will deploy the patched JAR and restart Druid prior to running tests.
+**IMPORTANT: Your fix must stop all such exploit requests while making sure that legitimate requests keep working correctly.**
 
-You must work with Apache Druid version 0.20.0.
+You must operate on Apache Druid version 0.20.0.

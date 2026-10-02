@@ -10,11 +10,13 @@ Raw structure (per skill):
     instruction.md         ← original query (task-level semantic variant)
     index_0/instruction.md ← expression-level paraphrase 0
     ...
-    index_6/instruction.md ← expression-level paraphrase 6
+    index_3/instruction.md ← expression-level paraphrase 3
     environment/           ← shared Docker environment
     tests/                 ← verifier scripts
   <skill>_1/  ...
-  <skill>_9/
+  <skill>_15/
+
+  16 instances × 5 queries = 80 queries per skill.
 
 Output structure (iter_* format, all 80 queries flattened):
   data/evolve/<skill>/

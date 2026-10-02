@@ -1,6 +1,6 @@
-You're given `packets.pcap` (subset of DAPT2020 traffic). Compute **all** the stats and fill in the `value` column in `/root/network_stats.csv`. Lines starting with `#` are comments—leave them.
+Using `packets.pcap` (subset of DAPT2020 traffic), compute **all** the stats and fill in the `value` column in `/root/network_stats.csv`. Leave lines starting with `#` (comments) untouched.
 
-You must compute all of the following categories (full pipeline required):
+Compute all of the following categories (full pipeline required):
 
 **Protocol counts:** `protocol_tcp`, `protocol_udp`, `protocol_icmp`, `protocol_arp`, `protocol_ip_total`
 

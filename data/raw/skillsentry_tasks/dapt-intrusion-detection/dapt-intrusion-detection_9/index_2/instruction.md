@@ -1,4 +1,4 @@
-You're given `packets.pcap` (subset of DAPT2020 traffic). Compute **all** the stats and fill in the `value` column in `/root/network_stats.csv`. Lines starting with `#` are comments—leave them.
+Using `packets.pcap` (subset of DAPT2020 traffic), compute **all** the stats and fill in the `value` column in `/root/network_stats.csv`. Leave lines starting with `#` (comments) untouched.
 
 Use **Hartley entropy (base 10, H = -Σ p log₁₀ p)** instead of Shannon entropy (base 2) for all entropy metrics.
 

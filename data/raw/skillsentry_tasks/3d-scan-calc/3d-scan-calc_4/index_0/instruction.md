@@ -1,4 +1,4 @@
-Report the **3 largest connected components** by volume. The input (`/root/scan_data.stl`) uses Attribute Byte Count as Material ID.
+Your task is to report the **3 largest connected components** by volume. The input (`/root/scan_data.stl`) uses Attribute Byte Count as Material ID.
 
 1. Parse the binary STL, find ALL connected components, sort by volume descending, take the top 3.
 2. For each, compute mass = Volume × Density (from `/root/material_density_table.md`).

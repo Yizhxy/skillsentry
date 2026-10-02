@@ -1,13 +1,13 @@
-A vulnerability has been found in Apache Druid version 0.20.0: the empty-key `""` bypass enables RCE.
+Vulnerability in Apache Druid version 0.20.0: the empty-key `""` bypass enables RCE.
 
-Your fix approach: **Role-based allowlist for JavaScript execution**.
+Fix approach: **Role-based allowlist for JavaScript execution**.
 
 1. **Analyze the vulnerability** — understand the attack vector: authenticated users can bypass JS security via empty key.
 2. **Locate the JavaScript evaluation entry point** in `/root/druid/` source.
 3. **Implement allowlist gating** — modify the JavaScript evaluation path so that:
    - JavaScript execution is only permitted for requests with an admin/superuser role
    - All other requests that attempt JavaScript evaluation are rejected with HTTP 403
-   - Also add pre-deserialization validation to reject the empty-key pattern regardless of role
+   - Pre-deserialization validation also rejects the empty-key pattern regardless of role
 4. **Create patch files** in `/root/patches/`.
 5. **Apply patches and rebuild**:
 ```bash

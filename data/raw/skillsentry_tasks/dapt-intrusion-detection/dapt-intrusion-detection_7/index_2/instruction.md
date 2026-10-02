@@ -1,4 +1,4 @@
-You're given `packets.pcap` (subset of DAPT2020 traffic). Compute **all** the stats and fill in the `value` column in `/root/network_stats.csv`. Lines starting with `#` are comments—leave them.
+Using `packets.pcap` (subset of DAPT2020 traffic), compute **all** the stats and fill in the `value` column in `/root/network_stats.csv`. Leave lines starting with `#` (comments) untouched.
 
 Use **120-second buckets** for time/rate metrics.
 

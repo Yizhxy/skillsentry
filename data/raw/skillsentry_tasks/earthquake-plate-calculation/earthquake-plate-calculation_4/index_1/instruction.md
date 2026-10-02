@@ -1,4 +1,4 @@
-You are a geospatial analyst with expertise in plate tectonics and earthquake analysis. I want to find the earthquake that occurred furthest from the South America plate boundary within the South America plate itself. Use GeoPandas projections. Output the result to `/root/answer.json` as a JSON file with the following fields:
+You are a geospatial analyst specializing in plate tectonics and earthquake analysis. I want to identify the earthquake that happened furthest from the South America plate boundary within the South America plate itself. Make use of GeoPandas projections. Write the result to `/root/answer.json` as a JSON file containing the following fields:
 
 - `id`: The earthquake ID
 - `place`: The earthquake location description
@@ -8,4 +8,4 @@ You are a geospatial analyst with expertise in plate tectonics and earthquake an
 - `longitude`: The earthquake longitude
 - `distance_km`: Largest distance to the South America plate boundary in kilometers (rounded to 2 decimal places)
 
-The earthquake data is provided in `/root/earthquakes_2024.json`. The plate boundary data is given in `/root/PB2002_boundaries.json` and `/root/PB2002_plates.json`.
+The earthquake data is supplied in `/root/earthquakes_2024.json`. The plate boundary data is available in `/root/PB2002_boundaries.json` and `/root/PB2002_plates.json`.

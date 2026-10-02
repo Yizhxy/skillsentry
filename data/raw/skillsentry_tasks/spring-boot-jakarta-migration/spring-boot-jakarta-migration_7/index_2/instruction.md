@@ -1,6 +1,6 @@
-Under the `/workspace/` folder, there is a legacy user management microservice to migrate from Java 8/Spring Boot 2.7 to **Java 17/Spring Boot 3.2**.
+Migrate the legacy user management microservice under the `/workspace/` folder from Java 8/Spring Boot 2.7 to **Java 17/Spring Boot 3.2**.
 
-Your migration should:
+Migration steps:
 1. Analyze current project structure — read pom.xml, identify all dependencies
 2. Upgrade Java version from 8 to **17** in pom.xml
 3. Upgrade Spring Boot from 2.7.x to **3.2.x**

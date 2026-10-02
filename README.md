@@ -20,7 +20,17 @@ SkillSentry consists of two stages:
    - **Procedure Checker**: monitors whether execution follows the skill procedure; delivers step-level hints and blocks failure-associated actions when detected.
    - **Termination Checker**: verifies that all required skill steps have been completed before accepting the final output; prompts the agent to continue if not.
 
+   ![Step-aware runtime assurance: an execution example](assert/runtime_assurance_example.png)
+
    Resulting successful and failed traces are collected and fed back into Execution Experience Mining to update the runtime guidance, forming a self-evolving loop.
+
+## Motivating Example
+
+The skill *macroeconomic-timeseries-detrending* defines a six-step procedure. Even when this skill is loaded, LLM agents still fail in two typical ways. In **step deviation**, a required step such as *Harmonize Frequency* is skipped. In **incorrect step execution**, a step is carried out with the wrong parameter, for example an HP-filter λ of 100 instead of 1600 for quarterly data.
+
+| Skill | Failure cases |
+|---|---|
+| ![Skill for economic time series detrending](assert/example_skill.png) | ![Example cases of skill execution failure](assert/example_failure_cases.png) |
 
 ## Repository Structure
 
@@ -30,22 +40,39 @@ skillsentry/
 ├── README.md
 │
 ├── assert/
-│   └── overview.pdf                  # Architecture overview figure
+│   ├── overview.pdf / .png           # Architecture overview figure
+│   ├── runtime_assurance_example.png # Step-aware runtime assurance execution example
+│   ├── example_skill.png             # Motivating example: the detrending skill
+│   ├── example_failure_cases.png     # Motivating example: step deviation / incorrect step execution
+│   ├── example_runtime_guidance.png  # Structure of the runtime guidance for the example skill
+│   └── case_study_runtime_assurance.png  # Case study: SkillSentry assuring Claude Code + Haiku-4.5
 │
 ├── data/
 │   ├── raw/
-│   │   └── skillsentry_tasks/        # Raw task environments (SKILL.md, tests, Dockerfiles)
+│   │   └── skillsentry_tasks/        # Raw task environments, 15 tasks
+│   │       └── <task>/
+│   │           └── <task>_0 … <task>_15/          # 16 task-level variants per task
+│   │               ├── instruction.md             #   original query of this variant
+│   │               ├── index_0 … index_3/         #   4 expression-level paraphrases
+│   │               │   └── instruction.md         #   (16 variants × 5 queries = 80 queries)
+│   │               ├── environment/               #   Dockerfile, input data, skills/<skill>/SKILL.md
+│   │               ├── tests/                     #   verifier (test.sh, test_outputs.py)
+│   │               ├── solution/                  #   reference solution (solve.sh)
+│   │               └── task.toml                  #   task metadata and timeouts
+│   ├── human_evaluation/
+│   │   └── human_evaluation_questionnaire.xlsx  # Questionnaire for the parser / mining human evaluation
 │   └── results/
-│       ├── dsl/                      # Runtime guidance (guidance.json) per model × skill
+│       ├── dsl/                      # Runtime guidance per model × task
 │       │   ├── haiku/                #   Claude Code + Claude-Haiku-4.5  (15 skills)
 │       │   ├── opus/                 #   Claude Code + Claude-Opus-4.6   (15 skills)
 │       │   ├── gpt-5.2/              #   Codex + GPT-5.2-medium          (15 skills)
 │       │   └── gpt-5.4/              #   Codex + GPT-5.4                 (15 skills)
+│       │       └── <task>/guidance.json
 │       ├── evolve/                   # Self-evolving success-rate curves per model × skill
-│       │   ├── haiku_4_5/            #   Per-skill success rate over 10 iterations (PNG + PDF)
-│       │   ├── opus_4_6/             #   Per-skill success rate over 10 iterations (PNG + PDF)
-│       │   ├── gpt_5_2/              #   Per-skill success rate over 10 iterations (PNG + PDF)
-│       │   └── gpt_5_4/              #   Per-skill success rate over 10 iterations (PNG + PDF)
+│       │   ├── haiku_4_5/            #   <model>__<skill>.png / .pdf, 10 iterations
+│       │   ├── opus_4_6/
+│       │   ├── gpt_5_2/
+│       │   └── gpt_5_4/
 │       └── runtimes/                 # Runtime overhead breakdown per model (PNG + PDF)
 │           ├── haiku_4_5_runtime_breakdown.*
 │           ├── opus_4_6_runtime_breakdown.*
@@ -54,6 +81,7 @@ skillsentry/
 │
 ├── skillsentry/
 │   ├── skillsentry/                  # Core runtime assurance library
+│   │   ├── __init__.py
 │   │   ├── fsm.py                    #   Finite-state machine: step tracking & transitions
 │   │   ├── ir.py                     #   Internal representation of DSL guidance
 │   │   ├── layers.py                 #   Procedure checker and termination checker logic
@@ -62,6 +90,8 @@ skillsentry/
 │   ├── hooks/
 │   │   └── skillsentry_hook.py       # Hook entry point injected into the agent runtime
 │   └── fix_codex/                    # Codex 0.135.0 hook-fix patch + Harbor integration
+│       ├── README.md                 #   Details of the hook fix
+│       ├── __init__.py
 │       ├── agent.py                  #   PatchedCodexAgent for Harbor
 │       ├── Dockerfile.base           #   Base Docker image with fixed codex binary
 │       ├── setup.sh                  #   One-click install script
@@ -80,13 +110,14 @@ skillsentry/
     │   ├── experience_diagnosis_sp.txt / _up.txt    # Experience diagnosis prompts
     │   └── experience_edition_sp.txt / _up.txt      # Guidance editing prompts
     └── utils/
+        ├── __init__.py
         ├── llm.py                    #   LLM API client wrapper
         ├── runner.py                 #   Harbor trial runner and trace collector
         ├── trace.py                  #   Trace parsing and representation
         ├── task_data.py              #   Query and skill data loaders
         ├── memory.py                 #   Accumulated experience memory across iterations
         ├── state.py                  #   Evolve-stage iteration state persistence
-        └── prepare_data.py           #   Converts raw task data → evolve/test split format
+        └── prepare_data.py           #   Converts raw task data → data/evolve/ (iter_* format)
 ```
 
 ## Experimental Results
@@ -96,6 +127,55 @@ The `data/results/` directory contains all artifacts from the paper's evaluation
 ### Runtime Guidance (`data/results/dsl/`)
 
 Each `guidance.json` is the runtime guidance for one skill under one model, combining the extracted skill specification with mined execution experience. These are used as the initial guidance fed into the self-evolving stage.
+
+The figure below shows the structure of the runtime guidance for the motivating example. Each step has a `step_id`, a description, `depends_on`, `constraints`, `logical_actions`, `failure_actions` and `on_enter` suggestions/warnings, and the guidance ends with the steps required for termination.
+
+<p align="center"><img src="assert/example_runtime_guidance.png" alt="An example of runtime guidance" width="640"></p>
+
+**Example: one step of the guidance.** This is the `analyze_cyclical_component` step from `dsl/opus/econ-detrending-correlation/guidance.json`. `logical_actions` determine when the step counts as completed. `failure_patterns` are soft-denied the first time they match, and the stated reason is returned to the agent as a hint. `on_enter` guidance is delivered when the step becomes active.
+
+```json
+{
+  "stepId": "analyze_cyclical_component",
+  "description": "Analyze cyclical component — compute correlation of cycle outputs, not trend",
+  "depends_on": ["apply_hp_filter"],
+  "logical_actions": [
+    {"actionId": 1, "patterns": [
+      {"tool": "Bash",  "command_match": "corrcoef|pearsonr|correlation|spearman|\\bcorr\\("},
+      {"tool": "Write", "input_match": {"content": "corrcoef|pearsonr|correlation|spearman|\\bcorr\\("}}
+    ]}
+  ],
+  "failure_patterns": [
+    {"tool": "Bash",
+     "command_match": "corrcoef\\([^)]*\\btrend\\b[^)]*,\\s*[^)]*\\btrend\\b[^)]*\\)",
+     "reason": "❌ Error: Do not compute correlation of trends. Use the cyclical component from hpfilter instead."}
+  ],
+  "on_enter": {
+    "suggestions": ["hpfilter returns (cycle, trend) — use cycle for correlation, not trend."]
+  }
+}
+```
+
+**Examples of failure-associated patterns** in the final runtime guidance. These were mined automatically from failed traces.
+
+| Agent-model | Skill / step | Runtime rule (tool + regex) | Stated reason |
+|---|---|---|---|
+| Codex + GPT-5.4 | glm-calibration / `process_output_and_calc_rmse` | Write, content: `depth\s*=\s*z\b` | ❌ GLM z is height from lake bottom. Correct: depth = lake_depth - z. |
+| Claude Code + Opus-4.6 | spring-boot-migration / `update_spring_security` | Write, content: `WebSecurityConfigurerAdapter` | ❌ WebSecurityConfigurerAdapter was removed in Spring Security 6. Use @Bean SecurityFilterChain instead. |
+| Claude Code + Haiku-4.5 | pddl-skills / `save_plan` | Write, content: `f\.write\(str\(action\)` | ❌ Using str(action) produces wrong PDDL format 'action(args)' instead of '(action args)'. Use PDDLWriter.write_plan() which generates correct PDDL format. |
+| Claude Code + Opus-4.6 | fjsp-repair-with-downtime-and-policy / `implement_overlap_detection` | Write, content: `return.*<=.*and.*<=` | ⚠️ Use half-open intervals [s,e): correct formula is 's < b and a < e'. Using <= incorrectly flags adjacent intervals as overlapping. |
+| Claude Code + Opus-4.6 | macroeconomic-timeseries-detrending / `analyze_cyclical_component` | Bash, command: `corrcoef\([^)]*\btrend\b[^)]*,\s*[^)]*\btrend\b[^)]*\)` | ❌ Do not compute correlation of trends. Use the cyclical component from hpfilter instead. |
+
+### Case Study
+
+The figure below shows how SkillSentry assures Claude Code with Claude-Haiku-4.5 while it executes the *macroeconomic-timeseries-detrending* skill.
+
+1. When the agent enters each step, SkillSentry delivers that step's suggestions and warnings.
+2. After the data is loaded, the agent tries to go straight to *Convert to Real Terms*, skipping *Harmonize Frequency*. SkillSentry soft-denies the action and returns a hint that names the missing step.
+3. The agent re-plans and calls `write_frequency` to aggregate the 2024 quarterly observations, which completes the skipped step.
+4. SkillSentry then lets execution continue, and checks that all required steps are completed before it accepts the final output. The result is the expected Pearson correlation of 0.68885.
+
+<p align="center"><img src="assert/case_study_runtime_assurance.png" alt="Example of runtime assurance by SkillSentry" width="560"></p>
 
 ### Self-Evolving Success Rate Curves (`data/results/evolve/`)
 
@@ -114,6 +194,15 @@ Breakdown of SkillSentry's runtime overhead (procedure checking, termination che
 | Claude-Haiku-4.5 | Claude-Opus-4.6 | GPT-5.2-medium | GPT-5.4 |
 |---|---|---|---|
 | ![](data/results/runtimes/haiku_4_5_runtime_breakdown.png) | ![](data/results/runtimes/opus_4_6_runtime_breakdown.png) | ![](data/results/runtimes/gpt_5_2_runtime_breakdown.png) | ![](data/results/runtimes/gpt_5_4_runtime_breakdown.png) |
+
+### Human Evaluation (`data/human_evaluation/`)
+
+`human_evaluation_questionnaire.xlsx` is the blank questionnaire used to evaluate the quality of the LLM-extracted content. There were two groups of raters, G1 (graduate students) and G2 (authors), and each rater worked independently.
+
+- **Part A: skill specification extraction.** The sheets `A_steps_<n>`, `A_constraints_<n>` and `A_spec_<n>` cover steps, dependencies, constraints and termination steps. These are rated against the full SKILL.md, which is provided in the `doc_<task>` sheets. The criteria are P1 Step fidelity, P2 Dependency correctness, P3 Constraint fidelity, P4 Completeness and P5 Termination correctness. A rating of 3 or lower also records an error type: Omitted, Altered or Hallucinated.
+- **Part B: execution experience mining.** The sheets `B_actions_<n>` and `B_suggestions_<n>` cover action patterns and suggestions/warnings. The criteria are D1 Evidence grounding, D2 Step alignment, D3 Reason validity and D4 Rule faithfulness.
+
+Every criterion is rated on a 1–5 scale, from 1 = *Totally not match* to 5 = *Totally match*. The `Instructions` and `How to rate` sheets give the rating rules and the definition of each level.
 
 ## Installation
 

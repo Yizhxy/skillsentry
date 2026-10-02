@@ -57,3 +57,11 @@ class TestSpringBootMigration:
         result = run_command("mvn test -q 2>&1 | tail -20")
         assert result.returncode == 0, f"mvn test failed:\n{result.stdout}\n{result.stderr}"
 
+    def test_cache_dependency(self):
+        """Check spring-boot-starter-cache is present."""
+        pom_path = "/workspace/pom.xml"
+        if os.path.exists(pom_path):
+            with open(pom_path) as f:
+                content = f.read()
+            assert "cache" in content.lower(), "pom.xml should include cache dependency"
+

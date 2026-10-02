@@ -28,10 +28,7 @@ Content-Type: application/json
 
 Fix the vulnerability with a patch AND add rate limiting to the /druid/indexer/v1/sampler endpoint to prevent abuse.
 
-**Fix approach:** Patch the vulnerability AND add rate limiting.
-1. Apply a source-level patch to block the empty-key JavaScript bypass.
-2. Add rate limiting to `/druid/indexer/v1/sampler`: maximum 10 requests per minute per IP.
-3. Write patch files, apply, and rebuild.
+**Fix approach:** Patch the vulnerability AND add rate limiting. First, apply a source-level patch to block the empty-key JavaScript bypass. Then add rate limiting to `/druid/indexer/v1/sampler` with a maximum of 10 requests per minute per IP. Finally, write patch files, apply them, and rebuild.
 
 Build command (skip web-console to avoid OOM, skip code quality checks for patched files):
 ```bash

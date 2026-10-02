@@ -28,13 +28,7 @@ Content-Type: application/json
 
 Fix the vulnerability AND write a JUnit unit test that verifies the patch blocks the exploit.
 
-**Fix approach:** Patch the source code AND write a unit test.
-1. Write patch files in `/root/patches/` that block the exploit.
-2. Apply the patches to `/root/druid/`.
-3. Write a JUnit test in `/root/druid/indexing-service/src/test/java/org/apache/druid/indexing/common/task/TestJavaScriptSecurityPatch.java` that:
-   - Sends a mock request with the empty-key JavaScript bypass
-   - Verifies it is blocked (exception thrown or filtered)
-4. Rebuild with the command below.
+**Fix approach:** Patch the source code AND write a unit test. First, write patch files in `/root/patches/` that block the exploit. Then apply the patches to `/root/druid/`. Next, write a JUnit test in `/root/druid/indexing-service/src/test/java/org/apache/druid/indexing/common/task/TestJavaScriptSecurityPatch.java` that sends a mock request with the empty-key JavaScript bypass and verifies it is blocked (exception thrown or filtered). Finally, rebuild with the command below.
 
 Build command (skip web-console to avoid OOM, skip code quality checks for patched files):
 ```bash

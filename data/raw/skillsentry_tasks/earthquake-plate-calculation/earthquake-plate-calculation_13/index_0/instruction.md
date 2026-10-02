@@ -1,0 +1,13 @@
+In this geospatial analysis task, real 2024 earthquake data and plate-boundary shapefiles are used. Use GeoPandas with an appropriate metric CRS for accurate distance calculations. The geospatial-analysis skill documents the exact workflow steps.
+
+Acting as a geospatial analyst with expertise in plate tectonics and earthquake analysis, your goal is to find the earthquake that occurred furthest from the Eurasia plate boundary within the Eurasia plate itself. Use GeoPandas projections. Output the result to `/root/answer.json` as a JSON file with the following fields:
+
+- `id`: The earthquake ID
+- `place`: The earthquake location description
+- `time`: The earthquake time in ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)
+- `magnitude`: The earthquake magnitude
+- `latitude`: The earthquake latitude
+- `longitude`: The earthquake longitude
+- `distance_km`: Largest distance to the Eurasia plate boundary in kilometers (rounded to 2 decimal places)
+
+The earthquake data is provided in `/root/earthquakes_2024.json`. The plate boundary data is given in `/root/PB2002_boundaries.json` and `/root/PB2002_plates.json`.

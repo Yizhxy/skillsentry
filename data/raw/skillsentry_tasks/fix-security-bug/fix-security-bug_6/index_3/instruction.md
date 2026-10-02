@@ -28,11 +28,7 @@ Content-Type: application/json
 
 Fix the vulnerability AND perform a broader security audit: identify and list any other JavaScript-related endpoints in Druid that might have similar issues.
 
-**Fix approach:** Patch the vulnerability AND audit for similar issues.
-1. Write and apply a patch to block the empty-key JavaScript bypass.
-2. Perform a code audit: search the Druid source for all endpoints that accept JavaScript (grep for `javascript`, `JavaScriptDimFilter`, `JavaScriptAggregator`, etc.).
-3. Write a report at `/root/patches/security_audit.md` listing all JavaScript-related endpoints found.
-4. Rebuild.
+**Fix approach:** Patch the vulnerability AND audit for similar issues. First, write and apply a patch to block the empty-key JavaScript bypass. Then perform a code audit by searching the Druid source for all endpoints that accept JavaScript (grep for `javascript`, `JavaScriptDimFilter`, `JavaScriptAggregator`, etc.). Next, write a report at `/root/patches/security_audit.md` listing all JavaScript-related endpoints found. Finally, rebuild.
 
 Build command (skip web-console to avoid OOM, skip code quality checks for patched files):
 ```bash

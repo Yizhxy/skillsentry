@@ -1,4 +1,4 @@
-Calculate the mass using a **stricter debris filtering rule**: exclude all components smaller than **5% of the largest component's volume**. The input uses Attribute Byte Count as Material ID.
+This task requires calculating the mass using a **stricter debris filtering rule**: exclude all components smaller than **5% of the largest component's volume**. The input uses Attribute Byte Count as Material ID.
 
 1. Parse the binary STL, find all connected components.
 2. Find the largest component volume.

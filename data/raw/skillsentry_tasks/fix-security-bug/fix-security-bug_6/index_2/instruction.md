@@ -1,4 +1,4 @@
-A vulnerability has been found in Apache Druid version 0.20.0: authenticated attackers can execute arbitrary code on the server through malicious JavaScript payloads.
+Vulnerability in Apache Druid version 0.20.0: authenticated attackers can execute arbitrary code on the server through malicious JavaScript payloads.
 
 The exploit uses an empty key `""` in the filter configuration to bypass JavaScript security settings:
 
@@ -29,18 +29,18 @@ Content-Type: application/json
 Fix the vulnerability AND perform a broader security audit: identify and list any other JavaScript-related endpoints in Druid that might have similar issues.
 
 **Fix approach:** Patch the vulnerability AND audit for similar issues.
-1. Write and apply a patch to block the empty-key JavaScript bypass.
-2. Perform a code audit: search the Druid source for all endpoints that accept JavaScript (grep for `javascript`, `JavaScriptDimFilter`, `JavaScriptAggregator`, etc.).
+1. Write and apply a patch blocking the empty-key JavaScript bypass.
+2. Audit the code: search the Druid source for all endpoints that accept JavaScript (grep for `javascript`, `JavaScriptDimFilter`, `JavaScriptAggregator`, etc.).
 3. Write a report at `/root/patches/security_audit.md` listing all JavaScript-related endpoints found.
 4. Rebuild.
 
-Build command (skip web-console to avoid OOM, skip code quality checks for patched files):
+Build (skip web-console to avoid OOM, skip code quality checks for patched files):
 ```bash
 cd /root/druid
 mvn clean package -DskipTests -Dcheckstyle.skip=true -Dpmd.skip=true -Dforbiddenapis.skip=true -Dspotbugs.skip=true -Danimal.sniffer.skip=true -Denforcer.skip=true -Djacoco.skip=true -Ddependency-check.skip=true -pl '!web-console' -pl indexing-service -am
 ```
 
-The verifier will deploy the patched JAR and restart Druid before running tests.
-**IMPORTANT: Your fix must block all such exploit requests while ensuring that legitimate requests continue to function correctly.**
+The verifier deploys the patched JAR and restarts Druid before running tests.
+**IMPORTANT: Block all such exploit requests while keeping legitimate requests functioning correctly.**
 
-You must work with Apache Druid version 0.20.0.
+Use Apache Druid version 0.20.0.

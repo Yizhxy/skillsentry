@@ -1,0 +1,20 @@
+Patch a known security vulnerability in Apache Druid. The fix must pass both negative tests (exploit blocked) and positive tests (legitimate requests succeed). Use the jackson-security skill's prescribed workflow: analyse, locate, validate, patch, rebuild, verify.
+
+Vulnerability in Apache Druid version 0.20.0: authenticated attackers can execute arbitrary code via the empty-key `""` JavaScript bypass.
+
+Apply a **defense-in-depth** fix:
+
+1. **Analyze the vulnerability** — identify the empty key `""` attack vector in the JavaScript filter deserialization path.
+2. **Locate the deserialization entry point** — the source files in `/root/druid/` where `JavaScriptDimFilter` or the sampler endpoint processes the incoming JSON.
+3. **Implement pre-deserialization validation** — detect and reject requests containing the empty-key bypass pattern before any JavaScript evaluation occurs.
+4. **Create patch files** in `/root/patches/` documenting the changes.
+5. **Apply patches and rebuild**:
+```bash
+cd /root/druid
+mvn clean package -DskipTests -Dcheckstyle.skip=true -Dpmd.skip=true -Dforbiddenapis.skip=true -Dspotbugs.skip=true -Danimal.sniffer.skip=true -Denforcer.skip=true -Djacoco.skip=true -Ddependency-check.skip=true -pl '!web-console' -pl indexing-service -am
+```
+6. **Verify** exploit payloads are blocked and legitimate requests preserved.
+
+Also disable JavaScript globally in the Druid config (`druid.javascript.enabled=false`) as a second layer of defense.
+
+**IMPORTANT: Source-level patch AND config change both required. Config alone is insufficient.**

@@ -1,7 +1,8 @@
-Report the **total number of connected components** and the main part mass. The input uses Attribute Byte Count as Material ID.
+Report the **total number of connected components** and the main part mass. Input: Attribute Byte Count = Material ID.
 
-1. Parse the binary STL, find ALL connected components.
-2. For the largest component (main part), compute mass.
+Steps:
+1. Parse the binary STL; find ALL connected components.
+2. Compute mass of the largest component (main part).
 3. Save to `/root/mass_report.json`:
 
 ```json
